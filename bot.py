@@ -1293,19 +1293,39 @@ def main():
     # Добавляем обработчик ошибок
     application.add_error_handler(error_handler)
     
+    # Пытаемся сначала использовать webhook для избежания конфликтов
+    try:
+        logger.info("Попытка запуска через webhook...")
+        # Устанавливаем webhook в None для использования long polling
+        application.bot.set_webhook(url=None)
+        logger.info("Webhook сброшен, запускаем polling...")
+    except Exception as e:
+        logger.warning(f"Не удалось сбросить webhook: {e}")
+    
     # Запускаем бота с обработкой ошибок
-    while True:
+    max_retries = 5
+    retry_count = 0
+    base_delay = 30  # Начинаем с 30 секунд
+    
+    while retry_count < max_retries:
         try:
-            logger.info("Запуск бота...")
-            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            logger.info(f"Запуск бота... (попытка {retry_count + 1}/{max_retries})")
+            application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Exception as e:
-            if "409 Conflict" in str(e) or "terminated by other getUpdates request" in str(e):
-                logger.warning("Обнаружен конфликт экземпляров бота. Перезапуск через 10 секунд...")
-                time.sleep(10)
-                continue
+            error_str = str(e)
+            if "409 Conflict" in error_str or "terminated by other getUpdates request" in error_str:
+                retry_count += 1
+                delay = base_delay * (2 ** (retry_count - 1))  # Экспоненциальная задержка: 30, 60, 120, 240, 480 сек
+                logger.warning(f"Обнаружен конфликт экземпляров бота. Ожидание {delay} секунд перед повторной попыткой {retry_count}/{max_retries}")
+                time.sleep(delay)
             else:
                 logger.error(f"Критическая ошибка: {e}")
                 break
+    
+    if retry_count >= max_retries:
+        logger.error("Превышено максимальное количество попыток перезапуска. Бот остановлен.")
+    else:
+        logger.info("Бот завершил работу.")
 
 if __name__ == '__main__':
     main()
