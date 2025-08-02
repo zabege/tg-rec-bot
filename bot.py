@@ -6,6 +6,7 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
+import time
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -1216,7 +1217,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Ошибка при обработке обновления {update}: {context.error}")
 
 def main():
-    """Основная функция"""
+    """Запуск бота"""
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN не найден в переменных окружения")
         return
@@ -1237,11 +1238,23 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("battle", battle_command))
     application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Добавляем обработчик ошибок
     application.add_error_handler(error_handler)
     
-    # Запускаем бота
-    logger.info("Movie Battle Bot запущен")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Запускаем бота с обработкой ошибок
+    while True:
+        try:
+            logger.info("Запуск бота...")
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+        except Exception as e:
+            if "409 Conflict" in str(e) or "terminated by other getUpdates request" in str(e):
+                logger.warning("Обнаружен конфликт экземпляров бота. Перезапуск через 10 секунд...")
+                time.sleep(10)
+                continue
+            else:
+                logger.error(f"Критическая ошибка: {e}")
+                break
 
 if __name__ == '__main__':
     main()
