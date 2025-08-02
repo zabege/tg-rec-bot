@@ -236,6 +236,73 @@ def get_survey_data(user_id: int, chat_id: int):
         }
     return None
 
+def get_active_group_game(chat_id: int):
+    """Получение активной игры в группе"""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT * FROM games 
+        WHERE chat_id = ? AND game_type = 'group'
+        ORDER BY created_at DESC LIMIT 1
+    ''', (chat_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+def get_group_survey_data(chat_id: int):
+    """Получение данных группового опросника"""
+    import json
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT selected_genres, content_type, year_range 
+        FROM surveys 
+        WHERE chat_id = ?
+        ORDER BY created_at DESC
+    ''', (chat_id,))
+    
+    results = cursor.fetchall()
+    conn.close()
+    
+    if not results:
+        return None
+    
+    # Объединяем данные всех участников
+    all_genres = []
+    content_types = {}
+    year_ranges = {}
+    
+    for result in results:
+        genres = json.loads(result[0])
+        content_type = result[1]
+        year_range = result[2]
+        
+        all_genres.extend(genres)
+        content_types[content_type] = content_types.get(content_type, 0) + 1
+        year_ranges[year_range] = year_ranges.get(year_range, 0) + 1
+    
+    # Выбираем наиболее популярные варианты
+    most_popular_content = max(content_types.items(), key=lambda x: x[1])[0]
+    most_popular_year = max(year_ranges.items(), key=lambda x: x[1])[0]
+    
+    # Убираем дубликаты жанров и берем топ-3
+    unique_genres = list(set(all_genres))
+    genre_counts = {}
+    for genre in all_genres:
+        genre_counts[genre] = genre_counts.get(genre, 0) + 1
+    
+    top_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    selected_genres = [genre for genre, count in top_genres]
+    
+    return {
+        'selected_genres': selected_genres,
+        'content_type': most_popular_content,
+        'year_range': most_popular_year
+    }
+
 def get_movies_by_survey(selected_genres: list, content_type: str, year_range: str, count: int = 26):
     """Получение фильмов на основе опросника"""
     try:
@@ -494,8 +561,6 @@ def format_movie_battle(movie1: dict, movie2: dict, round_num: int, total_rounds
     # Фильм 1
     title1 = movie1.get('title', 'Без названия')
     overview1 = movie1.get('overview', 'Описание отсутствует')
-    if len(overview1) > 100:
-        overview1 = overview1[:97] + "..."
     
     message += f"🎬 **{title1}**\n"
     message += f"📝 {overview1}\n\n"
@@ -503,8 +568,6 @@ def format_movie_battle(movie1: dict, movie2: dict, round_num: int, total_rounds
     # Фильм 2
     title2 = movie2.get('title', 'Без названия')
     overview2 = movie2.get('overview', 'Описание отсутствует')
-    if len(overview2) > 100:
-        overview2 = overview2[:97] + "..."
     
     message += f"🎬 **{title2}**\n"
     message += f"📝 {overview2}\n\n"
@@ -612,22 +675,15 @@ async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Проверяем, есть ли сохраненные данные опросника
-    survey_data = get_survey_data(user_id, chat_id)
+    # Проверяем, есть ли активная игра в группе
+    active_game = get_active_group_game(chat_id)
     
-    if survey_data:
-        # Используем сохраненные данные опросника
-        movies = get_movies_by_survey(
-            survey_data['selected_genres'],
-            survey_data['content_type'],
-            survey_data['year_range'],
-            26
-        )
-        game_id = create_game(user_id, chat_id, 'group', movies)
-        await start_battle_round(update, context, game_id, movies)
+    if active_game:
+        # Если игра уже идет, присоединяемся к ней
+        await join_existing_game(update, context, active_game)
     else:
-        # Начинаем опросник
-        await start_survey(update, context)
+        # Начинаем новый опросник для группы
+        await start_group_survey(update, context)
 
 async def start_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало опросника"""
@@ -655,6 +711,75 @@ async def start_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало группового опросника"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # Проверяем, не проходил ли пользователь уже опросник
+    existing_survey = get_survey_data(user_id, chat_id)
+    if existing_survey:
+        await update.message.reply_text("Ты уже проходил опросник в этой группе!")
+        return
+    
+    save_user_state(user_id, GAME_STATES['SURVEY_GENRES'])
+    
+    # Создаем кнопки для выбора жанров
+    keyboard = []
+    for genre_key, genre_info in GENRES.items():
+        keyboard.append([InlineKeyboardButton(
+            genre_info['name'], 
+            callback_data=f"group_survey_genre_{genre_key}"
+        )])
+    
+    # Кнопка для завершения выбора жанров
+    keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="group_survey_genres_done")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = "🎬 **Групповой опросник - Вопрос 1: Жанры**\n\n"
+    message += "Какие жанры тебе нравятся? Выбери до 3.\n"
+    message += "Нажми на жанр, чтобы выбрать/отменить."
+    
+    await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Присоединение к существующей игре"""
+    import json
+    
+    game = get_active_group_game(update.effective_chat.id)
+    if not game:
+        return
+    
+    movies_json = game[4]  # movies_list
+    movies_list = json.loads(movies_json)
+    
+    message = "🎮 **Присоединяемся к активной игре!**\n\n"
+    message += "Голосование уже идет. Выбирай лучший фильм!"
+    
+    # Показываем текущую пару фильмов
+    if len(movies_list) >= 2:
+        movie1 = movies_list[0]
+        movie2 = movies_list[1]
+        
+        message += f"\n\n🎬 **{movie1['title']}**\n"
+        message += f"📝 {movie1.get('overview', 'Описание отсутствует')}\n\n"
+        message += f"🎬 **{movie2['title']}**\n"
+        message += f"📝 {movie2.get('overview', 'Описание отсутствует')}\n\n"
+        
+        # Создаем кнопки для голосования с полными названиями
+        keyboard = [
+            [
+                InlineKeyboardButton(f"🎬 {movie1['title']}", callback_data=f"vote_1_{game[0]}"),
+                InlineKeyboardButton(f"🎬 {movie2['title']}", callback_data=f"vote_2_{game[0]}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(message, parse_mode='Markdown')
 
 async def start_battle_round(update, context, game_id, movies_list):
     """Начало раунда битвы"""
@@ -724,18 +849,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     if query.data == "mode_single":
-        # Одиночный режим
-        user_id = query.from_user.id
-        chat_id = query.message.chat.id
-        
-        save_user_state(user_id, GAME_STATES['SINGLE_PLAYER'])
-        
-        # Создаем новую игру
-        movies = get_popular_movies(26)
-        game_id = create_game(user_id, chat_id, 'single', movies)
-        
-        # Начинаем первый раунд
-        await start_battle_round(query, context, game_id, movies)
+        # Одиночный режим - начинаем с опросника
+        await start_survey(query, context)
     
     elif query.data == "mode_group":
         # Групповой режим
@@ -765,6 +880,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Обработка выбора года
         await handle_survey_year_selection(query, context)
     
+    elif query.data.startswith("group_survey_genre_"):
+        # Обработка выбора жанра в групповом опроснике
+        await handle_group_survey_genre_selection(query, context)
+    
+    elif query.data == "group_survey_genres_done":
+        # Завершение выбора жанров в групповом опроснике
+        await handle_group_survey_genres_done(query, context)
+    
+    elif query.data.startswith("group_survey_type_"):
+        # Обработка выбора типа контента в групповом опроснике
+        await handle_group_survey_type_selection(query, context)
+    
+    elif query.data.startswith("group_survey_year_"):
+        # Обработка выбора года в групповом опроснике
+        await handle_group_survey_year_selection(query, context)
+    
     elif query.data.startswith("vote_"):
         # Обработка голосования
         parts = query.data.split("_")
@@ -776,8 +907,211 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "new_battle":
         # Новая битва
         await start(query, context)
+
+async def handle_group_survey_genre_selection(query, context):
+    """Обработка выбора жанра в групповом опроснике"""
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id
+    genre_key = query.data.replace("group_survey_genre_", "")
     
-    # Убрали обработчик next_round, так как переход стал автоматическим
+    # Получаем текущие выбранные жанры из контекста
+    if 'selected_genres' not in context.user_data:
+        context.user_data['selected_genres'] = []
+    
+    selected_genres = context.user_data['selected_genres']
+    
+    # Переключаем выбор жанра
+    if genre_key in selected_genres:
+        selected_genres.remove(genre_key)
+    else:
+        if len(selected_genres) < 3:
+            selected_genres.append(genre_key)
+    
+    # Обновляем кнопки
+    keyboard = []
+    for g_key, g_info in GENRES.items():
+        button_text = f"✅ {g_info['name']}" if g_key in selected_genres else g_info['name']
+        keyboard.append([InlineKeyboardButton(
+            button_text, 
+            callback_data=f"group_survey_genre_{g_key}"
+        )])
+    
+    # Кнопка для завершения
+    keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="group_survey_genres_done")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = "🎬 **Групповой опросник - Вопрос 1: Жанры**\n\n"
+    message += "Какие жанры тебе нравятся? Выбери до 3.\n"
+    message += f"Выбрано: {len(selected_genres)}/3\n"
+    
+    if selected_genres:
+        selected_names = [GENRES[g]['name'] for g in selected_genres]
+        message += f"Выбранные жанры: {', '.join(selected_names)}"
+    
+    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def handle_group_survey_genres_done(query, context):
+    """Завершение выбора жанров в групповом опроснике"""
+    user_id = query.from_user.id
+    
+    if 'selected_genres' not in context.user_data or not context.user_data['selected_genres']:
+        await query.answer("Выбери хотя бы один жанр!")
+        return
+    
+    save_user_state(user_id, GAME_STATES['SURVEY_TYPE'])
+    
+    # Создаем кнопки для выбора типа контента
+    keyboard = []
+    for type_key, type_name in CONTENT_TYPES.items():
+        keyboard.append([InlineKeyboardButton(
+            type_name, 
+            callback_data=f"group_survey_type_{type_key}"
+        )])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = "🎬 **Групповой опросник - Вопрос 2: Тип контента**\n\n"
+    message += "Хочешь фильмы или сериалы?"
+    
+    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def handle_group_survey_type_selection(query, context):
+    """Обработка выбора типа контента в групповом опроснике"""
+    user_id = query.from_user.id
+    content_type = query.data.replace("group_survey_type_", "")
+    
+    context.user_data['content_type'] = content_type
+    save_user_state(user_id, GAME_STATES['SURVEY_YEARS'])
+    
+    # Создаем кнопки для выбора года
+    keyboard = []
+    for year_key, year_info in YEAR_RANGES.items():
+        keyboard.append([InlineKeyboardButton(
+            year_info['name'], 
+            callback_data=f"group_survey_year_{year_key}"
+        )])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = "🎬 **Групповой опросник - Вопрос 3: Годы выпуска**\n\n"
+    message += "Фильмы какого времени?"
+    
+    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def handle_group_survey_year_selection(query, context):
+    """Обработка выбора года в групповом опроснике"""
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id
+    year_range = query.data.replace("group_survey_year_", "")
+    
+    # Сохраняем данные опросника пользователя
+    selected_genres = context.user_data.get('selected_genres', [])
+    content_type = context.user_data.get('content_type', 'movie')
+    
+    save_survey_data(user_id, chat_id, selected_genres, content_type, year_range)
+    
+    # Проверяем, сколько участников прошли опросник
+    survey_count = get_survey_participants_count(chat_id)
+    chat_members_count = await query.bot.get_chat_member_count(chat_id)
+    
+    # Если прошли опросник все участники или большинство, начинаем игру
+    if survey_count >= min(chat_members_count - 1, 3):  # -1 для бота, минимум 3 участника
+        await start_group_game_from_survey(query, context, chat_id)
+    else:
+        # Показываем статус и ждем других участников
+        message = "✅ **Твой опросник завершен!**\n\n"
+        message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
+        message += "⏳ Ждем других участников..."
+        
+        await query.edit_message_text(message, parse_mode='Markdown')
+
+def get_survey_participants_count(chat_id: int):
+    """Получение количества участников, прошедших опросник"""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT COUNT(DISTINCT user_id) 
+        FROM surveys 
+        WHERE chat_id = ?
+    ''', (chat_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else 0
+
+async def start_group_game_from_survey(query, context, chat_id):
+    """Запуск групповой игры на основе опросника"""
+    # Получаем объединенные данные опросника
+    survey_data = get_group_survey_data(chat_id)
+    
+    if not survey_data:
+        await query.edit_message_text("❌ Ошибка: данные опросника не найдены")
+        return
+    
+    # Получаем фильмы на основе опросника
+    movies = get_movies_by_survey(
+        survey_data['selected_genres'],
+        survey_data['content_type'],
+        survey_data['year_range'],
+        26
+    )
+    
+    # Создаем игру
+    user_id = query.from_user.id
+    game_id = create_game(user_id, chat_id, 'group', movies)
+    
+    # Показываем результат опросника
+    selected_genres_names = [GENRES[g]['name'] for g in survey_data['selected_genres']]
+    content_type_name = CONTENT_TYPES[survey_data['content_type']]
+    year_range_name = YEAR_RANGES[survey_data['year_range']]['name']
+    
+    message = "🎮 **Групповой опросник завершен!**\n\n"
+    message += f"🎬 Выбранные жанры: {', '.join(selected_genres_names)}\n"
+    message += f"📺 Тип контента: {content_type_name}\n"
+    message += f"📅 Годы: {year_range_name}\n\n"
+    message += "⚔️ Начинаем битву фильмов!"
+    
+    await query.edit_message_text(message, parse_mode='Markdown')
+    
+    # Начинаем первый раунд
+    await start_battle_round(query, context, game_id, movies)
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ошибок"""
+    logger.error(f"Ошибка при обработке обновления {update}: {context.error}")
+
+def main():
+    """Основная функция"""
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN не найден в переменных окружения")
+        return
+    
+    # Проверяем TMDb API ключ
+    if not TMDB_API_KEY or TMDB_API_KEY == "placeholder_until_domain_ready":
+        logger.info("TMDb API ключ не настроен, используем заглушки фильмов")
+    else:
+        logger.info("TMDb API ключ настроен")
+    
+    # Инициализируем базу данных
+    init_database()
+    
+    # Создаем приложение
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("battle", battle_command))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_error_handler(error_handler)
+    
+    # Запускаем бота
+    logger.info("Movie Battle Bot запущен")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    main()
 
 async def process_vote(query, context, game_id, vote):
     """Обработка голосования"""
@@ -846,6 +1180,12 @@ async def process_vote(query, context, game_id, vote):
         message += f"🎬 {current_pair_movies[0]['title']}: {vote1_count} голосов\n"
         message += f"🎬 {current_pair_movies[1]['title']}: {vote2_count} голосов\n\n"
         
+        # Показываем полные описания фильмов
+        message += f"🎬 **{current_pair_movies[0]['title']}**\n"
+        message += f"📝 {current_pair_movies[0].get('overview', 'Описание отсутствует')}\n\n"
+        message += f"🎬 **{current_pair_movies[1]['title']}**\n"
+        message += f"📝 {current_pair_movies[1].get('overview', 'Описание отсутствует')}\n\n"
+        
         # Проверяем, нужно ли завершить раунд
         total_votes = len(votes)
         chat_members_count = await context.bot.get_chat_member_count(game[2])  # chat_id
@@ -857,8 +1197,8 @@ async def process_vote(query, context, game_id, vote):
             # Показываем кнопки для продолжения голосования
             keyboard = [
                 [
-                    InlineKeyboardButton(f"🎬 {current_pair_movies[0]['title'][:15]}...", callback_data=f"vote_1_{game_id}"),
-                    InlineKeyboardButton(f"🎬 {current_pair_movies[1]['title'][:15]}...", callback_data=f"vote_2_{game_id}")
+                    InlineKeyboardButton(f"🎬 {current_pair_movies[0]['title']}", callback_data=f"vote_1_{game_id}"),
+                    InlineKeyboardButton(f"🎬 {current_pair_movies[1]['title']}", callback_data=f"vote_2_{game_id}")
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1026,8 +1366,8 @@ async def handle_survey_year_selection(query, context):
     # Получаем фильмы на основе опросника
     movies = get_movies_by_survey(selected_genres, content_type, year_range, 26)
     
-    # Создаем игру
-    game_id = create_game(user_id, chat_id, 'group', movies)
+    # Создаем игру (одиночный режим)
+    game_id = create_game(user_id, chat_id, 'single', movies)
     
     # Показываем результат опросника
     selected_genres_names = [GENRES[g]['name'] for g in selected_genres]
