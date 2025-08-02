@@ -1309,9 +1309,9 @@ def main():
         logger.warning(f"Не удалось сбросить webhook: {e}")
     
     # Запускаем бота с обработкой ошибок
-    max_retries = 5
+    max_retries = 3  # Уменьшаем количество попыток
     retry_count = 0
-    base_delay = 30  # Начинаем с 30 секунд
+    base_delay = 60  # Увеличиваем начальную задержку
     
     while retry_count < max_retries:
         try:
@@ -1321,7 +1321,12 @@ def main():
             error_str = str(e)
             if "409 Conflict" in error_str or "terminated by other getUpdates request" in error_str:
                 retry_count += 1
-                delay = base_delay * (2 ** (retry_count - 1))  # Экспоненциальная задержка: 30, 60, 120, 240, 480 сек
+                if retry_count >= max_retries:
+                    logger.error("Превышено максимальное количество попыток. Завершаем работу с кодом ошибки для перезапуска Railway.")
+                    import sys
+                    sys.exit(1)  # Завершаем с кодом ошибки
+                
+                delay = base_delay * (2 ** (retry_count - 1))  # Экспоненциальная задержка: 60, 120, 240 сек
                 logger.warning(f"Обнаружен конфликт экземпляров бота. Ожидание {delay} секунд перед повторной попыткой {retry_count}/{max_retries}")
                 time.sleep(delay)
             else:
@@ -1330,6 +1335,8 @@ def main():
     
     if retry_count >= max_retries:
         logger.error("Превышено максимальное количество попыток перезапуска. Бот остановлен.")
+        import sys
+        sys.exit(1)  # Завершаем с кодом ошибки
     else:
         logger.info("Бот завершил работу.")
 
