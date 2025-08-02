@@ -1322,39 +1322,22 @@ async def handle_group_survey_year_selection(query, context):
     
     message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
     
-    # Если прошли опросник все участники или большинство, начинаем игру
-    if survey_count >= min(chat_members_count - 1, 3):  # -1 для бота, минимум 3 участника
-        message += "\n🎮 Все участники завершили опросник! Начинаем игру..."
-        await query.edit_message_text(message, parse_mode='Markdown')
-        
-        # Отправляем уведомление в группу
-        try:
-            group_message = f"🎉 **{user_name}** завершил опросник! Все участники готовы!"
-            await context.bot.send_message(chat_id, group_message, parse_mode='Markdown')
-        except Exception as e:
-            logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
-        
-        # Небольшая задержка для показа сообщения
-        import asyncio
-        await asyncio.sleep(2)
-        
-        await start_group_game_from_survey(query, context, chat_id)
-    else:
-        message += "\n⏳ Ждем других участников..."
-        await query.edit_message_text(message, parse_mode='Markdown')
-        
-        # Отправляем уведомление в группу
-        try:
-            group_message = f"✅ **{user_name}** завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
-            await context.bot.send_message(chat_id, group_message, parse_mode='Markdown')
-        except Exception as e:
-            logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
-
+    # Показываем сообщение о завершении опросника
+    await query.edit_message_text(message, parse_mode='Markdown')
+    
+    # Отправляем уведомление в группу
+    try:
+        group_message = f"✅ **{user_name}** завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
+        await context.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+    except Exception as e:
+        logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
+    
     # Проверяем, кто ещё не прошёл опросник
     survey_user_ids = get_survey_user_ids(chat_id)
     all_user_ids = await get_all_group_user_ids(context, chat_id)
     not_passed = all_user_ids - survey_user_ids
     logger.info(f"В чате {chat_id} опросник прошли: {survey_user_ids}, не прошли: {not_passed}")
+    
     if not_passed:
         # Отправляем кнопку "Начать опросник" снова
         keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
@@ -1369,7 +1352,8 @@ async def handle_group_survey_year_selection(query, context):
         )
     else:
         logger.info(f"Все участники прошли опросник в чате {chat_id}. Начинаем игру!")
-        # ... (запуск игры как сейчас) ...
+        # Запускаем игру
+        await start_group_game_from_survey(query, context, chat_id)
 
 def get_survey_participants_count(chat_id: int):
     """Получение количества участников, прошедших опросник"""
@@ -1505,77 +1489,6 @@ async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYP
     logger.info(f"Состояние пользователя {user_id} сброшено на 'waiting_mode'")
     
     await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
-
-def main():
-    """Запуск бота"""
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN не найден в переменных окружения")
-        return
-    
-    # Проверяем TMDb API ключ
-    if not TMDB_API_KEY or TMDB_API_KEY == "placeholder_until_domain_ready":
-        logger.info("TMDb API ключ не настроен, используем заглушки фильмов")
-    else:
-        logger.info("TMDb API ключ настроен")
-    
-    # Инициализируем базу данных
-    init_database()
-    
-    # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("battle", battle_command))
-    application.add_handler(CommandHandler("reset_survey", reset_survey_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Добавляем обработчик ошибок
-    application.add_error_handler(error_handler)
-    
-    # Пытаемся сначала использовать webhook для избежания конфликтов
-    try:
-        logger.info("Попытка запуска через webhook...")
-        # Устанавливаем webhook в None для использования long polling
-        application.bot.set_webhook(url=None)
-        logger.info("Webhook сброшен, запускаем polling...")
-    except Exception as e:
-        logger.warning(f"Не удалось сбросить webhook: {e}")
-    
-    # Запускаем бота с обработкой ошибок
-    max_retries = 3  # Уменьшаем количество попыток
-    retry_count = 0
-    base_delay = 60  # Увеличиваем начальную задержку
-    
-    while retry_count < max_retries:
-        try:
-            logger.info(f"Запуск бота... (попытка {retry_count + 1}/{max_retries})")
-            application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-        except Exception as e:
-            error_str = str(e)
-            if "409 Conflict" in error_str or "terminated by other getUpdates request" in error_str:
-                retry_count += 1
-                if retry_count >= max_retries:
-                    logger.error("Превышено максимальное количество попыток. Завершаем работу с кодом ошибки для перезапуска Railway.")
-                    import sys
-                    sys.exit(1)  # Завершаем с кодом ошибки
-                
-                delay = base_delay * (2 ** (retry_count - 1))  # Экспоненциальная задержка: 60, 120, 240 сек
-                logger.warning(f"Обнаружен конфликт экземпляров бота. Ожидание {delay} секунд перед повторной попыткой {retry_count}/{max_retries}")
-                time.sleep(delay)
-            else:
-                logger.error(f"Критическая ошибка: {e}")
-                break
-    
-    if retry_count >= max_retries:
-        logger.error("Превышено максимальное количество попыток перезапуска. Бот остановлен.")
-        import sys
-        sys.exit(1)  # Завершаем с кодом ошибки
-    else:
-        logger.info("Бот завершил работу.")
-
-if __name__ == '__main__':
-    main()
 
 async def process_vote(query, context, game_id, vote):
     """Обработка голосования"""
@@ -1906,30 +1819,73 @@ async def handle_survey_year_selection(query, context):
     # Начинаем первый раунд
     await start_battle_round(query, context, game_id, movies)
 
-# Вспомогательная функция: получить id всех пользователей, прошедших опросник в чате
-def get_survey_user_ids(chat_id: int):
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT DISTINCT user_id FROM surveys WHERE chat_id = ?', (chat_id,))
-    result = cursor.fetchall()
-    conn.close()
-    return set(row[0] for row in result)
-
-# Вспомогательная функция: получить id всех пользователей, которые могут пройти опросник (членов чата, кроме бота)
-async def get_all_group_user_ids(context, chat_id: int):
-    # Получаем список участников чата (без бота)
-    members = []
+def main():
+    """Запуск бота"""
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN не найден в переменных окружения")
+        return
+    
+    # Проверяем TMDb API ключ
+    if not TMDB_API_KEY or TMDB_API_KEY == "placeholder_until_domain_ready":
+        logger.info("TMDb API ключ не настроен, используем заглушки фильмов")
+    else:
+        logger.info("TMDb API ключ настроен")
+    
+    # Инициализируем базу данных
+    init_database()
+    
+    # Создаем приложение
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("battle", battle_command))
+    application.add_handler(CommandHandler("reset_survey", reset_survey_command))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Добавляем обработчик ошибок
+    application.add_error_handler(error_handler)
+    
+    # Пытаемся сначала использовать webhook для избежания конфликтов
     try:
-        chat = await context.bot.get_chat(chat_id)
-        admins = await context.bot.get_chat_administrators(chat_id)
-        for admin in admins:
-            if not admin.user.is_bot:
-                members.append(admin.user.id)
-        # В реальных группах Telegram API не даёт получить всех участников, только админов и себя
-        # Поэтому для теста используем только админов
+        logger.info("Попытка запуска через webhook...")
+        # Устанавливаем webhook в None для использования long polling
+        application.bot.set_webhook(url=None)
+        logger.info("Webhook сброшен, запускаем polling...")
     except Exception as e:
-        logger.warning(f"Не удалось получить участников чата {chat_id}: {e}")
-    return set(members)
+        logger.warning(f"Не удалось сбросить webhook: {e}")
+    
+    # Запускаем бота с обработкой ошибок
+    max_retries = 1  # Только одна попытка
+    retry_count = 0
+    base_delay = 120  # 2 минуты задержки
+    
+    while retry_count < max_retries:
+        try:
+            logger.info(f"Запуск бота... (попытка {retry_count + 1}/{max_retries})")
+            application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        except Exception as e:
+            error_str = str(e)
+            if "409 Conflict" in error_str or "terminated by other getUpdates request" in error_str:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logger.error("Обнаружен конфликт экземпляров бота. Завершаем работу для перезапуска Railway.")
+                    import sys
+                    sys.exit(1)  # Завершаем с кодом ошибки
+                
+                delay = base_delay
+                logger.warning(f"Обнаружен конфликт экземпляров бота. Ожидание {delay} секунд перед повторной попыткой {retry_count}/{max_retries}")
+                time.sleep(delay)
+            else:
+                logger.error(f"Критическая ошибка: {e}")
+                break
+    
+    if retry_count >= max_retries:
+        logger.error("Превышено максимальное количество попыток перезапуска. Бот остановлен.")
+        import sys
+        sys.exit(1)  # Завершаем с кодом ошибки
+    else:
+        logger.info("Бот завершил работу.")
 
 if __name__ == '__main__':
-    main() 
+    main()
