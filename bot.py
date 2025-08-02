@@ -726,8 +726,10 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Проверяем, не проходил ли пользователь уже опросник
     existing_survey = get_survey_data(user_id, chat_id)
-    if existing_survey:
-        # Показываем статус опросника
+    temp_data = get_user_survey_temp_data(user_id, chat_id)
+    
+    if existing_survey and not temp_data['selected_genres']:
+        # Пользователь уже завершил опросник
         survey_count = get_survey_participants_count(chat_id)
         chat_members_count = await update.bot.get_chat_member_count(chat_id)
         
@@ -741,6 +743,33 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         await update.message.reply_text(message, parse_mode='Markdown')
         return
+    
+    # Если есть временные данные, но опросник не завершен - продолжаем
+    if temp_data['selected_genres']:
+        # Продолжаем опросник с того места, где остановились
+        current_state = get_user_state(user_id)
+        if current_state == GAME_STATES['SURVEY_GENRES']:
+            # Показываем первый вопрос с текущими выборами
+            keyboard = []
+            for genre_key, genre_info in GENRES.items():
+                is_selected = genre_key in temp_data['selected_genres']
+                text = f"{'✅' if is_selected else '⬜'} {genre_info['name']}"
+                keyboard.append([InlineKeyboardButton(
+                    text, 
+                    callback_data=f"group_survey_genre_{genre_key}"
+                )])
+            keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="group_survey_genres_done")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            user_name = update.effective_user.username or update.effective_user.first_name
+            message = f"🎬 **Опросник для @{user_name}**\n\n"
+            message += "**Вопрос 1: Жанры**\n"
+            message += "Какие жанры тебе нравятся? Выбери до 3.\n"
+            message += f"Выбрано: {len(temp_data['selected_genres'])}/3\n"
+            message += "Нажми на жанр, чтобы выбрать/отменить."
+            
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            return
     
     # Инициализируем временные данные пользователя в базе данных
     save_user_survey_temp_data(user_id, chat_id, selected_genres=[], content_type='movie')
@@ -759,7 +788,8 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = f"🎬 **Опросник для @{update.effective_user.username or update.effective_user.first_name}**\n\n"
+    user_name = update.effective_user.username or update.effective_user.first_name
+    message = f"🎬 **Опросник для @{user_name}**\n\n"
     message += "**Вопрос 1: Жанры**\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
@@ -1237,6 +1267,7 @@ def main():
     # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("battle", battle_command))
+    application.add_handler(CommandHandler("reset_survey", reset_survey_command))
     application.add_handler(CallbackQueryHandler(button_handler))
     
     # Добавляем обработчик ошибок
@@ -1671,3 +1702,23 @@ def clear_user_survey_temp_data(user_id: int, chat_id: int):
     
     conn.commit()
     conn.close() 
+
+async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сброс опросника пользователя"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # Очищаем временные данные
+    clear_user_survey_temp_data(user_id, chat_id)
+    
+    # Удаляем завершенный опросник из базы данных
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM surveys WHERE user_id = ? AND chat_id = ?', (user_id, chat_id))
+    conn.commit()
+    conn.close()
+    
+    # Сбрасываем состояние пользователя
+    save_user_state(user_id, 'waiting_mode')
+    
+    await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
