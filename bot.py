@@ -791,14 +791,14 @@ async def start_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Вопрос 1: Жанры**\n\n"
+    message = "🎬 Вопрос 1: Жанры\n\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
     if hasattr(update, 'edit_message_text'):
-        await update.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.edit_message_text(message, reply_markup=reply_markup)
     else:
-        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(message, reply_markup=reply_markup)
 
 async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало группового опросника"""
@@ -1026,9 +1026,9 @@ async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(message, reply_markup=reply_markup)
     else:
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message)
 
 async def start_battle_round(update, context, game_id, movies_list):
     """Начало раунда битвы"""
@@ -1051,9 +1051,9 @@ async def start_battle_round(update, context, game_id, movies_list):
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             if hasattr(update, 'edit_message_text'):
-                await update.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                await update.edit_message_text(message, reply_markup=reply_markup)
             else:
-                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                await update.message.reply_text(message, reply_markup=reply_markup)
         return
     
     # Выбираем пару фильмов
@@ -1079,13 +1079,13 @@ async def start_battle_round(update, context, game_id, movies_list):
     
     # Отправляем сообщение
     if hasattr(update, 'edit_message_text'):
-        await update.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.edit_message_text(message, reply_markup=reply_markup)
     else:
         # Для группового режима отправляем новое сообщение в группу
         if hasattr(update, 'message') and update.message.chat.type != 'private':
-            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.message.reply_text(message, reply_markup=reply_markup)
         else:
-            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.message.reply_text(message, reply_markup=reply_markup)
 
 def get_current_game_by_id(game_id: int):
     """Получение игры по ID"""
@@ -1108,13 +1108,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "mode_group":
         # Групповой режим
         await query.edit_message_text(
-            "👥 **Групповой режим**\n\n"
+            "👥 Групповой режим\n\n"
             "1. Добавь бота в Telegram-группу\n"
             "2. Отправь команду /battle в группе\n"
             "3. Пройди опросник для персонализации\n"
             "4. Участники будут голосовать за лучший фильм\n\n"
-            "Готов начать групповую битву?",
-            parse_mode='Markdown'
+            "Готов начать групповую битву?"
         )
     
     elif query.data.startswith("survey_genre_"):
@@ -1541,7 +1540,7 @@ async def process_vote(query, context, game_id, vote):
             message = format_battle_result(winner, game_type)
             keyboard = [[InlineKeyboardButton("🔄 Новая битва", callback_data="new_battle")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await query.edit_message_text(message, reply_markup=reply_markup)
         else:
             # Увеличиваем номер раунда и продолжаем игру
             increment_game_round(game_id)
@@ -1594,7 +1593,7 @@ async def process_vote(query, context, game_id, vote):
                 [InlineKeyboardButton("✅ Завершить раунд", callback_data=f"finish_round_{game_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await query.edit_message_text(message, reply_markup=reply_markup)
         else:
             # Показываем кнопки для продолжения голосования
             keyboard = [
@@ -1604,7 +1603,7 @@ async def process_vote(query, context, game_id, vote):
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def finish_round_manually(query, context, game_id):
     """Принудительное завершение раунда"""
@@ -1669,11 +1668,11 @@ async def finish_group_round(query, context, game_id, movies_list, current_pair_
         result_message = format_battle_result(winner, 'group')
         keyboard = [[InlineKeyboardButton("🔄 Новая битва", callback_data="new_battle")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(result_message, reply_markup=reply_markup, parse_mode='Markdown')
+        await query.edit_message_text(result_message, reply_markup=reply_markup)
     else:
         # Автоматически переходим к следующему раунду через 3 секунды
         message += "⏳ Переход к следующему раунду через 3 секунды..."
-        await query.edit_message_text(message, parse_mode='Markdown')
+        await query.edit_message_text(message)
         
         # Увеличиваем номер раунда
         increment_game_round(game_id)
@@ -1722,7 +1721,7 @@ async def handle_survey_genre_selection(query, context):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Вопрос 1: Жанры**\n\n"
+    message = "🎬 Вопрос 1: Жанры\n\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += f"Выбрано: {len(selected_genres)}/3\n"
     
@@ -1730,7 +1729,7 @@ async def handle_survey_genre_selection(query, context):
         selected_names = [GENRES[g]['name'] for g in selected_genres]
         message += f"Выбранные жанры: {', '.join(selected_names)}"
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def handle_survey_genres_done(query, context):
     """Завершение выбора жанров"""
@@ -1752,10 +1751,10 @@ async def handle_survey_genres_done(query, context):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Вопрос 2: Тип контента**\n\n"
+    message = "🎬 Вопрос 2: Тип контента\n\n"
     message += "Хочешь фильмы или сериалы?"
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def handle_survey_type_selection(query, context):
     """Обработка выбора типа контента"""
@@ -1778,7 +1777,7 @@ async def handle_survey_type_selection(query, context):
     message = "🎬 **Вопрос 3: Годы выпуска**\n\n"
     message += "Фильмы какого времени?"
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def handle_survey_year_selection(query, context):
     """Обработка выбора года в одиночном опроснике"""
@@ -1798,13 +1797,13 @@ async def handle_survey_year_selection(query, context):
     content_type_name = CONTENT_TYPES[content_type]
     year_range_name = YEAR_RANGES[year_range]['name']
     
-    message = "✅ **Опросник завершен!**\n\n"
+    message = "✅ Опросник завершен!\n\n"
     message += f"🎬 Твои жанры: {', '.join(selected_genres_names)}\n"
     message += f"📺 Твой тип: {content_type_name}\n"
     message += f"📅 Твои годы: {year_range_name}\n\n"
     message += "🎮 Начинаем игру!"
     
-    await query.edit_message_text(message, parse_mode='Markdown')
+    await query.edit_message_text(message)
     
     # Получаем фильмы на основе опросника
     movies = get_movies_by_survey(selected_genres, content_type, year_range, 26)
