@@ -741,9 +741,8 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(message, parse_mode='Markdown')
         return
     
-    # Инициализируем данные пользователя
-    context.user_data['selected_genres'] = []
-    context.user_data['content_type'] = 'movie'
+    # Инициализируем временные данные пользователя в базе данных
+    save_user_survey_temp_data(user_id, chat_id, selected_genres=[], content_type='movie')
     save_user_state(user_id, GAME_STATES['SURVEY_GENRES'])
     
     # Создаем кнопки для выбора жанров
@@ -943,13 +942,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_group_survey_genre_selection(query, context):
     """Обработка выбора жанра в групповом опроснике"""
     user_id = query.from_user.id
+    chat_id = query.message.chat.id
     genre_key = query.data.replace("group_survey_genre_", "")
     
-    # Инициализируем список жанров, если его нет
-    if 'selected_genres' not in context.user_data:
-        context.user_data['selected_genres'] = []
-    
-    selected_genres = context.user_data['selected_genres']
+    # Получаем текущие данные пользователя из базы данных
+    user_data = get_user_survey_temp_data(user_id, chat_id)
+    selected_genres = user_data['selected_genres']
     
     # Переключаем выбор жанра
     if genre_key in selected_genres:
@@ -957,6 +955,9 @@ async def handle_group_survey_genre_selection(query, context):
     else:
         if len(selected_genres) < 3:
             selected_genres.append(genre_key)
+    
+    # Сохраняем обновленные данные
+    save_user_survey_temp_data(user_id, chat_id, selected_genres=selected_genres)
     
     # Обновляем кнопки
     keyboard = []
@@ -987,8 +988,13 @@ async def handle_group_survey_genre_selection(query, context):
 async def handle_group_survey_genres_done(query, context):
     """Завершение выбора жанров в групповом опроснике"""
     user_id = query.from_user.id
+    chat_id = query.message.chat.id
     
-    if 'selected_genres' not in context.user_data or not context.user_data['selected_genres']:
+    # Получаем данные пользователя из базы данных
+    user_data = get_user_survey_temp_data(user_id, chat_id)
+    selected_genres = user_data['selected_genres']
+    
+    if not selected_genres:
         await query.answer("Выбери хотя бы один жанр!")
         return
     
@@ -1014,9 +1020,11 @@ async def handle_group_survey_genres_done(query, context):
 async def handle_group_survey_type_selection(query, context):
     """Обработка выбора типа контента в групповом опроснике"""
     user_id = query.from_user.id
+    chat_id = query.message.chat.id
     content_type = query.data.replace("group_survey_type_", "")
     
-    context.user_data['content_type'] = content_type
+    # Сохраняем выбранный тип контента
+    save_user_survey_temp_data(user_id, chat_id, content_type=content_type)
     save_user_state(user_id, GAME_STATES['SURVEY_YEARS'])
     
     # Создаем кнопки для выбора года
@@ -1039,16 +1047,19 @@ async def handle_group_survey_type_selection(query, context):
 async def handle_group_survey_year_selection(query, context):
     """Обработка выбора года в групповом опроснике"""
     user_id = query.from_user.id
+    chat_id = query.message.chat.id
     year_range = query.data.replace("group_survey_year_", "")
     
-    # Получаем chat_id из сообщения
-    chat_id = query.message.chat.id
+    # Получаем данные пользователя из базы данных
+    user_data = get_user_survey_temp_data(user_id, chat_id)
+    selected_genres = user_data['selected_genres']
+    content_type = user_data['content_type']
     
-    # Сохраняем данные опросника пользователя
-    selected_genres = context.user_data.get('selected_genres', [])
-    content_type = context.user_data.get('content_type', 'movie')
-    
+    # Сохраняем финальные данные опросника
     save_survey_data(user_id, chat_id, selected_genres, content_type, year_range)
+    
+    # Очищаем временные данные
+    clear_user_survey_temp_data(user_id, chat_id)
     
     # Показываем сообщение о завершении опросника
     selected_genres_names = [GENRES[g]['name'] for g in selected_genres]
@@ -1555,3 +1566,95 @@ async def handle_survey_year_selection(query, context):
     
     # Начинаем первый раунд
     await start_battle_round(query, context, game_id, movies) 
+
+def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
+    """Сохранение временных данных опросника пользователя"""
+    import json
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    # Создаем таблицу для временных данных опроса, если её нет
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS survey_temp_data (
+            user_id INTEGER,
+            chat_id INTEGER,
+            selected_genres TEXT,
+            content_type TEXT,
+            year_range TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, chat_id)
+        )
+    ''')
+    
+    # Получаем текущие данные
+    cursor.execute('''
+        SELECT selected_genres, content_type, year_range 
+        FROM survey_temp_data 
+        WHERE user_id = ? AND chat_id = ?
+    ''', (user_id, chat_id))
+    
+    result = cursor.fetchone()
+    current_data = {
+        'selected_genres': json.loads(result[0]) if result and result[0] else [],
+        'content_type': result[1] if result else 'movie',
+        'year_range': result[2] if result else None
+    }
+    
+    # Обновляем только переданные данные
+    if selected_genres is not None:
+        current_data['selected_genres'] = selected_genres
+    if content_type is not None:
+        current_data['content_type'] = content_type
+    if year_range is not None:
+        current_data['year_range'] = year_range
+    
+    # Сохраняем обновленные данные
+    cursor.execute('''
+        INSERT OR REPLACE INTO survey_temp_data (user_id, chat_id, selected_genres, content_type, year_range)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user_id, chat_id, json.dumps(current_data['selected_genres']), current_data['content_type'], current_data['year_range']))
+    
+    conn.commit()
+    conn.close()
+    
+    return current_data
+
+def get_user_survey_temp_data(user_id: int, chat_id: int):
+    """Получение временных данных опросника пользователя"""
+    import json
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT selected_genres, content_type, year_range 
+        FROM survey_temp_data 
+        WHERE user_id = ? AND chat_id = ?
+    ''', (user_id, chat_id))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return {
+            'selected_genres': json.loads(result[0]) if result[0] else [],
+            'content_type': result[1] if result[1] else 'movie',
+            'year_range': result[2]
+        }
+    return {
+        'selected_genres': [],
+        'content_type': 'movie',
+        'year_range': None
+    }
+
+def clear_user_survey_temp_data(user_id: int, chat_id: int):
+    """Очистка временных данных опросника пользователя"""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        DELETE FROM survey_temp_data 
+        WHERE user_id = ? AND chat_id = ?
+    ''', (user_id, chat_id))
+    
+    conn.commit()
+    conn.close() 
