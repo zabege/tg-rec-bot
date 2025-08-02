@@ -885,6 +885,84 @@ async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAU
         # Если не удалось отправить общий опросник, отправляем индивидуальный
         await start_group_survey(update, context)
 
+async def start_individual_group_survey(query, context):
+    """Начало индивидуального опросника для участника группы (через кнопку)"""
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id
+    
+    # Проверяем, не проходил ли пользователь уже опросник
+    existing_survey = get_survey_data(user_id, chat_id)
+    temp_data = get_user_survey_temp_data(user_id, chat_id)
+    
+    if existing_survey and not temp_data['selected_genres']:
+        # Пользователь уже завершил опросник
+        survey_count = get_survey_participants_count(chat_id)
+        chat_members_count = await context.bot.get_chat_member_count(chat_id)
+        
+        message = "✅ **Ты уже проходил опросник в этой группе!**\n\n"
+        message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
+        
+        if survey_count >= min(chat_members_count - 1, 3):
+            message += "\n🎮 Все участники завершили опросник! Игра должна начаться скоро..."
+        else:
+            message += "\n⏳ Ждем других участников..."
+        
+        await query.answer(message)
+        return
+    
+    # Если есть временные данные, но опросник не завершен - продолжаем
+    if temp_data['selected_genres']:
+        # Продолжаем опросник с того места, где остановились
+        current_state = get_user_state(user_id)
+        if current_state == GAME_STATES['SURVEY_GENRES']:
+            # Показываем первый вопрос с текущими выборами
+            keyboard = []
+            for genre_key, genre_info in GENRES.items():
+                is_selected = genre_key in temp_data['selected_genres']
+                text = f"{'✅' if is_selected else '⬜'} {genre_info['name']}"
+                keyboard.append([InlineKeyboardButton(
+                    text, 
+                    callback_data=f"group_survey_genre_{genre_key}"
+                )])
+            keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="group_survey_genres_done")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            user_name = query.from_user.username or query.from_user.first_name
+            message = f"🎬 **Опросник для @{user_name}**\n\n"
+            message += "**Вопрос 1: Жанры**\n"
+            message += "Какие жанры тебе нравятся? Выбери до 3.\n"
+            message += f"Выбрано: {len(temp_data['selected_genres'])}/3\n"
+            message += "Нажми на жанр, чтобы выбрать/отменить."
+            
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            return
+    
+    # Инициализируем временные данные пользователя в базе данных
+    save_user_survey_temp_data(user_id, chat_id, selected_genres=[], content_type='movie')
+    save_user_state(user_id, GAME_STATES['SURVEY_GENRES'])
+    
+    # Создаем кнопки для выбора жанров
+    keyboard = []
+    for genre_key, genre_info in GENRES.items():
+        keyboard.append([InlineKeyboardButton(
+            genre_info['name'], 
+            callback_data=f"group_survey_genre_{genre_key}"
+        )])
+    
+    # Кнопка для завершения выбора жанров
+    keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="group_survey_genres_done")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    user_name = query.from_user.username or query.from_user.first_name
+    message = f"🎬 **Опросник для @{user_name}**\n\n"
+    message += "**Вопрос 1: Жанры**\n"
+    message += "Какие жанры тебе нравятся? Выбери до 3.\n"
+    message += "Нажми на жанр, чтобы выбрать/отменить."
+    
+    # Отправляем опросник в группу для конкретного пользователя
+    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
     import json
@@ -1043,7 +1121,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data == "start_my_survey":
         # Начало индивидуального опросника для участника группы
-        await start_group_survey(query, context)
+        await start_individual_group_survey(query, context)
     
     elif query.data.startswith("vote_"):
         # Обработка голосования
