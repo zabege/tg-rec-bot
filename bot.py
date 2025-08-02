@@ -890,11 +890,10 @@ async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAU
         # Отправляем общий опросник в группу
         await context.bot.send_message(
             chat_id=chat_id,
-            text="🎯 <b>Групповой опросник</b>\n\n"
+            text="🎯 Групповой опросник\n\n"
                  "Каждый участник должен пройти опросник индивидуально.\n"
                  "Нажмите кнопку ниже, чтобы начать свой опросник.",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
         
     except Exception as e:
@@ -1311,7 +1310,7 @@ async def handle_group_survey_year_selection(query, context):
     year_range_name = YEAR_RANGES[year_range]['name']
     
     user_name = query.from_user.username or query.from_user.first_name
-    message = f"✅ **Опросник для @{user_name} завершен!**\n\n"
+    message = f"✅ Опросник для @{user_name} завершен!\n\n"
     message += f"🎬 Твои жанры: {', '.join(selected_genres_names)}\n"
     message += f"📺 Твой тип: {content_type_name}\n"
     message += f"📅 Твои годы: {year_range_name}\n\n"
@@ -1323,12 +1322,12 @@ async def handle_group_survey_year_selection(query, context):
     message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
     
     # Показываем сообщение о завершении опросника
-    await query.edit_message_text(message, parse_mode='Markdown')
+    await query.edit_message_text(message)
     
     # Отправляем уведомление в группу
     try:
-        group_message = f"✅ <b>{user_name}</b> завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
-        await context.bot.send_message(chat_id, group_message, parse_mode='HTML')
+        group_message = f"✅ {user_name} завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
+        await context.bot.send_message(chat_id, group_message)
     except Exception as e:
         logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
     
@@ -1344,11 +1343,10 @@ async def handle_group_survey_year_selection(query, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(
             chat_id=chat_id,
-            text="🎯 <b>Групповой опросник</b>\n\n"
+            text="🎯 Групповой опросник\n\n"
                  "Каждый участник должен пройти опросник индивидуально.\n"
                  "Нажмите кнопку ниже, чтобы начать свой опросник.",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
     else:
         logger.info(f"Все участники прошли опросник в чате {chat_id}. Начинаем игру!")
@@ -1396,7 +1394,7 @@ async def start_group_game_from_survey(query, context, chat_id):
     content_type_name = CONTENT_TYPES[survey_data['content_type']]
     year_range_name = YEAR_RANGES[survey_data['year_range']]['name']
     
-    message = "🎮 <b>Групповой опросник завершен!</b>\n\n"
+    message = "🎮 Групповой опросник завершен!\n\n"
     message += f"🎬 Итоговые жанры: {', '.join(selected_genres_names)}\n"
     message += f"📺 Итоговый тип: {content_type_name}\n"
     message += f"📅 Итоговые годы: {year_range_name}\n\n"
@@ -1404,7 +1402,7 @@ async def start_group_game_from_survey(query, context, chat_id):
     
     # Отправляем сообщение в группу
     try:
-        await context.bot.send_message(chat_id, message, parse_mode='HTML')
+        await context.bot.send_message(chat_id, message)
     except Exception as e:
         logger.warning(f"Не удалось отправить сообщение в группу {chat_id}: {e}")
     
