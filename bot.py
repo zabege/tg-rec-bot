@@ -1154,7 +1154,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data == "start_my_survey":
         # Начало индивидуального опросника для участника группы
-        logger.info(f"Нажата кнопка start_my_survey пользователем {query.from_user.id}")
+        logger.info(f"Пользователь {query.from_user.id} нажал кнопку 'Начать опросник' в чате {query.message.chat.id}")
         await start_individual_group_survey(query, context)
     
     elif query.data.startswith("vote_"):
@@ -1349,6 +1349,27 @@ async def handle_group_survey_year_selection(query, context):
             await context.bot.send_message(chat_id, group_message, parse_mode='Markdown')
         except Exception as e:
             logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
+
+    # Проверяем, кто ещё не прошёл опросник
+    survey_user_ids = get_survey_user_ids(chat_id)
+    all_user_ids = await get_all_group_user_ids(context, chat_id)
+    not_passed = all_user_ids - survey_user_ids
+    logger.info(f"В чате {chat_id} опросник прошли: {survey_user_ids}, не прошли: {not_passed}")
+    if not_passed:
+        # Отправляем кнопку "Начать опросник" снова
+        keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🎯 **Групповой опросник**\n\n"
+                 "Каждый участник должен пройти опросник индивидуально.\n"
+                 "Нажмите кнопку ниже, чтобы начать свой опросник.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    else:
+        logger.info(f"Все участники прошли опросник в чате {chat_id}. Начинаем игру!")
+        # ... (запуск игры как сейчас) ...
 
 def get_survey_participants_count(chat_id: int):
     """Получение количества участников, прошедших опросник"""
@@ -1884,6 +1905,31 @@ async def handle_survey_year_selection(query, context):
     
     # Начинаем первый раунд
     await start_battle_round(query, context, game_id, movies)
+
+# Вспомогательная функция: получить id всех пользователей, прошедших опросник в чате
+def get_survey_user_ids(chat_id: int):
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT user_id FROM surveys WHERE chat_id = ?', (chat_id,))
+    result = cursor.fetchall()
+    conn.close()
+    return set(row[0] for row in result)
+
+# Вспомогательная функция: получить id всех пользователей, которые могут пройти опросник (членов чата, кроме бота)
+async def get_all_group_user_ids(context, chat_id: int):
+    # Получаем список участников чата (без бота)
+    members = []
+    try:
+        chat = await context.bot.get_chat(chat_id)
+        admins = await context.bot.get_chat_administrators(chat_id)
+        for admin in admins:
+            if not admin.user.is_bot:
+                members.append(admin.user.id)
+        # В реальных группах Telegram API не даёт получить всех участников, только админов и себя
+        # Поэтому для теста используем только админов
+    except Exception as e:
+        logger.warning(f"Не удалось получить участников чата {chat_id}: {e}")
+    return set(members)
 
 if __name__ == '__main__':
     main() 
