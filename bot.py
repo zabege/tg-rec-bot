@@ -866,24 +866,32 @@ async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAU
             parse_mode='Markdown'
         )
         
-        # Создаем кнопку для начала опросника
-        keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Отправляем общий опросник в группу
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="🎯 **Групповой опросник**\n\n"
-                 "Каждый участник должен пройти опросник индивидуально.\n"
-                 "Нажмите кнопку ниже, чтобы начать свой опросник.",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+        # Отправляем индивидуальную кнопку для каждого участника
+        await send_individual_survey_button(update.effective_user.id, chat_id, context)
         
     except Exception as e:
         logger.error(f"Ошибка при отправке группового опросника: {e}")
         # Если не удалось отправить общий опросник, отправляем индивидуальный
         await start_group_survey(update, context)
+
+async def send_individual_survey_button(user_id: int, chat_id: int, context):
+    """Отправка индивидуальной кнопки опросника для пользователя"""
+    try:
+        # Создаем кнопку для начала опросника
+        keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Отправляем индивидуальное сообщение пользователю
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🎯 **Твой опросник**\n\n"
+                 "Нажми кнопку ниже, чтобы начать свой опросник.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при отправке индивидуальной кнопки для пользователя {user_id}: {e}")
 
 async def start_individual_group_survey(query, context):
     """Начало индивидуального опросника для участника группы (через кнопку)"""
@@ -934,7 +942,12 @@ async def start_individual_group_survey(query, context):
             message += f"Выбрано: {len(temp_data['selected_genres'])}/3\n"
             message += "Нажми на жанр, чтобы выбрать/отменить."
             
-            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
             return
     
     # Инициализируем временные данные пользователя в базе данных
@@ -961,7 +974,12 @@ async def start_individual_group_survey(query, context):
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
     # Отправляем опросник в группу для конкретного пользователя
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=message,
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
