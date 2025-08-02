@@ -643,21 +643,21 @@ def get_mock_popular_movies(count: int = 26):
 
 def format_movie_battle(movie1: dict, movie2: dict, round_num: int, total_rounds: int):
     """Форматирование сообщения для битвы фильмов"""
-    message = f"⚔️ **РАУНД {round_num}/{total_rounds}**\n\n"
+    message = f"⚔️ РАУНД {round_num}/{total_rounds}\n\n"
     message += "Выбирай лучший фильм:\n\n"
     
     # Фильм 1
     title1 = movie1.get('title', 'Без названия')
     overview1 = movie1.get('overview', 'Описание отсутствует')
     
-    message += f"🎬 **{title1}**\n"
+    message += f"🎬 {title1}\n"
     message += f"📝 {overview1}\n\n"
     
     # Фильм 2
     title2 = movie2.get('title', 'Без названия')
     overview2 = movie2.get('overview', 'Описание отсутствует')
     
-    message += f"🎬 **{title2}**\n"
+    message += f"🎬 {title2}\n"
     message += f"📝 {overview2}\n\n"
     
     message += "Кто победит в этом раунде?"
@@ -672,8 +672,8 @@ def format_battle_result(winner: dict, game_type: str):
     if len(overview) > 150:
         overview = overview[:147] + "..."
     
-    message = f"🏆 **ПОБЕДИТЕЛЬ!**\n\n"
-    message += f"🎬 **{title}**\n"
+    message = f"🏆 ПОБЕДИТЕЛЬ!\n\n"
+    message += f"🎬 {title}\n"
     message += f"📝 {overview}\n\n"
     
     # Реферальные ссылки
@@ -705,9 +705,9 @@ def format_battle_result(winner: dict, game_type: str):
     num_services = random.randint(2, 3)
     selected_services = random.sample(all_services, min(num_services, len(all_services)))
     
-    message += "🎥 **Где посмотреть:**\n"
+    message += "🎥 Где посмотреть:\n"
     for service, link, region in selected_services:
-        message += f"• [Смотреть на {service} ({region})]({link})\n"
+        message += f"• Смотреть на {service} ({region}): {link}\n"
     
     return message
 
@@ -814,7 +814,7 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
         survey_count = get_survey_participants_count(chat_id)
         chat_members_count = await context.bot.get_chat_member_count(chat_id)
         
-        message = "✅ **Ты уже проходил опросник в этой группе!**\n\n"
+        message = "✅ Ты уже проходил опросник в этой группе!\n\n"
         message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
         
         if survey_count >= min(chat_members_count - 1, 3):
@@ -822,7 +822,7 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             message += "\n⏳ Ждем других участников..."
         
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message)
         return
     
     # Если есть временные данные, но опросник не завершен - продолжаем
@@ -1426,7 +1426,7 @@ async def start_battle_round_group(context, chat_id, game_id, movies_list):
             message = format_battle_result(winner, game[3])  # game_type
             keyboard = [[InlineKeyboardButton("🔄 Новая битва", callback_data="new_battle")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(chat_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+            await context.bot.send_message(chat_id, message, reply_markup=reply_markup)
         return
     
     # Выбираем пару фильмов
@@ -1452,7 +1452,7 @@ async def start_battle_round_group(context, chat_id, game_id, movies_list):
     
     # Отправляем сообщение в группу
     try:
-        await context.bot.send_message(chat_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+        await context.bot.send_message(chat_id, message, reply_markup=reply_markup)
     except Exception as e:
         logger.warning(f"Не удалось отправить сообщение в группу {chat_id}: {e}")
 
@@ -1484,7 +1484,7 @@ async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYP
     save_user_state(user_id, 'waiting_mode')
     logger.info(f"Состояние пользователя {user_id} сброшено на 'waiting_mode'")
     
-    await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
+    await update.message.reply_text("🔄 Опросник сброшен!\nТеперь можешь начать заново командой /battle")
 
 async def process_vote(query, context, game_id, vote):
     """Обработка голосования"""
