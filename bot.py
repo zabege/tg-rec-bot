@@ -1862,9 +1862,13 @@ async def handle_survey_year_selection(query, context):
 
 def main():
     """Запуск бота"""
+    logger.info("Запуск функции main()")
+    
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN не найден в переменных окружения")
         return
+    
+    logger.info("BOT_TOKEN найден")
     
     # Проверяем TMDb API ключ
     if not TMDB_API_KEY or TMDB_API_KEY == "placeholder_until_domain_ready":
@@ -1873,16 +1877,34 @@ def main():
         logger.info("TMDb API ключ настроен")
     
     # Инициализируем базу данных
-    init_database()
+    logger.info("Инициализация базы данных...")
+    try:
+        init_database()
+        logger.info("База данных инициализирована успешно")
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации базы данных: {e}")
+        return
     
     # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
+    logger.info("Создание приложения...")
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        logger.info("Приложение создано успешно")
+    except Exception as e:
+        logger.error(f"Ошибка при создании приложения: {e}")
+        return
     
     # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("battle", battle_command))
-    application.add_handler(CommandHandler("reset_survey", reset_survey_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    logger.info("Добавление обработчиков...")
+    try:
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("battle", battle_command))
+        application.add_handler(CommandHandler("reset_survey", reset_survey_command))
+        application.add_handler(CallbackQueryHandler(button_handler))
+        logger.info("Обработчики добавлены успешно")
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении обработчиков: {e}")
+        return
     
     # Добавляем обработчик ошибок
     application.add_error_handler(error_handler)
