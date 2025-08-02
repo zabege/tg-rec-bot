@@ -73,6 +73,12 @@ def init_database():
         )
     ''')
     
+    # Проверяем, есть ли колонка current_state, если нет - добавляем
+    try:
+        cursor.execute('SELECT current_state FROM users LIMIT 1')
+    except sqlite3.OperationalError:
+        cursor.execute('ALTER TABLE users ADD COLUMN current_state TEXT DEFAULT "waiting_mode"')
+    
     # Таблица игр
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (
@@ -754,7 +760,11 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
-    await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    # Отправляем личное сообщение пользователю
+    await context.bot.send_message(user_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    # Отправляем подтверждение в группу
+    await update.message.reply_text(f"✅ @{update.effective_user.username or update.effective_user.first_name}, тебе отправлен опросник в личные сообщения!")
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
@@ -932,7 +942,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_group_survey_genre_selection(query, context):
     """Обработка выбора жанра в групповом опроснике"""
     user_id = query.from_user.id
-    chat_id = query.message.chat.id
     genre_key = query.data.replace("group_survey_genre_", "")
     
     # Получаем текущие выбранные жанры из контекста
@@ -1023,8 +1032,25 @@ async def handle_group_survey_type_selection(query, context):
 async def handle_group_survey_year_selection(query, context):
     """Обработка выбора года в групповом опроснике"""
     user_id = query.from_user.id
-    chat_id = query.message.chat.id
     year_range = query.data.replace("group_survey_year_", "")
+    
+    # Получаем chat_id из базы данных или контекста
+    # Для этого нужно найти активную группу пользователя
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT chat_id FROM surveys 
+        WHERE user_id = ? 
+        ORDER BY created_at DESC LIMIT 1
+    ''', (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        await query.answer("Ошибка: не найдена группа для опросника")
+        return
+    
+    chat_id = result[0]
     
     # Сохраняем данные опросника пользователя
     selected_genres = context.user_data.get('selected_genres', [])
@@ -1053,6 +1079,11 @@ async def handle_group_survey_year_selection(query, context):
         message += "\n🎮 Все участники завершили опросник! Начинаем игру..."
         await query.edit_message_text(message, parse_mode='Markdown')
         
+        # Отправляем уведомление в группу
+        user_name = query.from_user.first_name or query.from_user.username or "Участник"
+        group_message = f"🎉 **{user_name}** завершил опросник! Все участники готовы!"
+        await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+        
         # Небольшая задержка для показа сообщения
         import asyncio
         await asyncio.sleep(2)
@@ -1061,6 +1092,11 @@ async def handle_group_survey_year_selection(query, context):
     else:
         message += "\n⏳ Ждем других участников..."
         await query.edit_message_text(message, parse_mode='Markdown')
+        
+        # Отправляем уведомление в группу
+        user_name = query.from_user.first_name or query.from_user.username or "Участник"
+        group_message = f"✅ **{user_name}** завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
+        await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
 
 def get_survey_participants_count(chat_id: int):
     """Получение количества участников, прошедших опросник"""
@@ -1112,14 +1148,54 @@ async def start_group_game_from_survey(query, context, chat_id):
     # Отправляем сообщение в группу
     await context.bot.send_message(chat_id, message, parse_mode='Markdown')
     
-    # Начинаем первый раунд - создаем фейковый update для группового сообщения
-    class FakeUpdate:
-        def __init__(self, chat_id, bot):
-            self.message = type('Message', (), {'chat': type('Chat', (), {'id': chat_id, 'type': 'group'})})()
-            self.bot = bot
+    # Начинаем первый раунд - отправляем в группу
+    await start_battle_round_group(context, chat_id, game_id, movies)
+
+async def start_battle_round_group(context, chat_id, game_id, movies_list):
+    """Начало раунда битвы в группе"""
+    import json
     
-    fake_update = FakeUpdate(chat_id, context.bot)
-    await start_battle_round(fake_update, context, game_id, movies)
+    # Получаем текущую игру
+    game = get_current_game_by_id(game_id)
+    if not game:
+        return
+    
+    current_round = game[5]  # current_round
+    total_rounds = game[6]   # total_rounds
+    
+    # Если фильмов осталось меньше 2, игра окончена
+    if len(movies_list) < 2:
+        winner = movies_list[0] if movies_list else None
+        if winner:
+            message = format_battle_result(winner, game[3])  # game_type
+            keyboard = [[InlineKeyboardButton("🔄 Новая битва", callback_data="new_battle")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(chat_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+        return
+    
+    # Выбираем пару фильмов
+    movie1 = movies_list[0]
+    movie2 = movies_list[1]
+    
+    # Создаем кнопки для голосования с полными названиями
+    keyboard = [
+        [
+            InlineKeyboardButton(f"🎬 {movie1['title']}", callback_data=f"vote_1_{game_id}"),
+            InlineKeyboardButton(f"🎬 {movie2['title']}", callback_data=f"vote_2_{game_id}")
+        ]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Формируем сообщение
+    message = format_movie_battle(movie1, movie2, current_round, total_rounds)
+    
+    # Сохраняем текущую пару
+    current_pair = json.dumps([movie1, movie2])
+    update_game_round(game_id, current_round, current_pair)
+    
+    # Отправляем сообщение в группу
+    await context.bot.send_message(chat_id, message, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
@@ -1475,39 +1551,4 @@ async def handle_survey_year_selection(query, context):
     await query.edit_message_text(message, parse_mode='Markdown')
     
     # Начинаем первый раунд
-    await start_battle_round(query, context, game_id, movies)
-
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик ошибок"""
-    logger.error(f"Ошибка при обработке обновления {update}: {context.error}")
-
-def main():
-    """Основная функция"""
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN не найден в переменных окружения")
-        return
-    
-    # Проверяем TMDb API ключ
-    if not TMDB_API_KEY or TMDB_API_KEY == "placeholder_until_domain_ready":
-        logger.info("TMDb API ключ не настроен, используем заглушки фильмов")
-    else:
-        logger.info("TMDb API ключ настроен")
-    
-    # Инициализируем базу данных
-    init_database()
-    
-    # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("battle", battle_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_error_handler(error_handler)
-    
-    # Запускаем бота
-    logger.info("Movie Battle Bot запущен")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    main() 
+    await start_battle_round(query, context, game_id, movies) 
