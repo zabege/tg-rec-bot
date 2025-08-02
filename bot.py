@@ -1286,9 +1286,11 @@ async def handle_group_survey_type_selection(query, context):
 
 async def handle_group_survey_year_selection(query, context):
     """Обработка выбора года в групповом опроснике"""
+    logger.info(f"Начало обработки group_survey_year_selection: user_id={query.from_user.id}, data={query.data}")
     user_id = query.from_user.id
     chat_id = query.message.chat.id
     year_range = query.data.replace("group_survey_year_", "")
+    logger.info(f"Извлеченные данные: user_id={user_id}, chat_id={chat_id}, year_range={year_range}")
     
     # Получаем данные пользователя из базы данных
     user_data = get_user_survey_temp_data(user_id, chat_id)
@@ -1313,8 +1315,11 @@ async def handle_group_survey_year_selection(query, context):
     message += f"📅 Твои годы: {year_range_name}\n\n"
     
     # Проверяем, сколько участников прошли опросник
+    logger.info(f"Получаем количество участников для чата {chat_id}")
     survey_count = get_survey_participants_count(chat_id)
+    logger.info(f"Количество прошедших опросник: {survey_count}")
     chat_members_count = await context.bot.get_chat_member_count(chat_id)
+    logger.info(f"Общее количество участников: {chat_members_count}")
     
     message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
     
