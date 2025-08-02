@@ -1246,6 +1246,26 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"Ошибка при обработке обновления {update}: {context.error}")
 
+async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сброс опросника пользователя"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # Очищаем временные данные
+    clear_user_survey_temp_data(user_id, chat_id)
+    
+    # Удаляем завершенный опросник из базы данных
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM surveys WHERE user_id = ? AND chat_id = ?', (user_id, chat_id))
+    conn.commit()
+    conn.close()
+    
+    # Сбрасываем состояние пользователя
+    save_user_state(user_id, 'waiting_mode')
+    
+    await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
+
 def main():
     """Запуск бота"""
     if not BOT_TOKEN:
@@ -1611,26 +1631,6 @@ async def handle_survey_year_selection(query, context):
     
     # Начинаем первый раунд
     await start_battle_round(query, context, game_id, movies)
-
-async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сброс опросника пользователя"""
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    
-    # Очищаем временные данные
-    clear_user_survey_temp_data(user_id, chat_id)
-    
-    # Удаляем завершенный опросник из базы данных
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM surveys WHERE user_id = ? AND chat_id = ?', (user_id, chat_id))
-    conn.commit()
-    conn.close()
-    
-    # Сбрасываем состояние пользователя
-    save_user_state(user_id, 'waiting_mode')
-    
-    await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
 
 def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
     """Сохранение временных данных опросника пользователя"""
