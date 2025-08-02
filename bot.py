@@ -162,12 +162,46 @@ def format_movie_message(movies: list, genre_name: str):
         if len(overview) > 150:
             overview = overview[:147] + "..."
         
-        # Реферальная ссылка на Netflix (заглушка)
-        netflix_link = "https://netflix.com/referral"
+        # Реферальные ссылки на стриминговые сервисы по регионам
+        streaming_links = {
+            'США': {
+                'Netflix': "https://netflix.com",
+                'Hulu': "https://hulu.com",
+                'Amazon Prime': "https://amazon.com/primevideo"
+            },
+            'ЕС': {
+                'Netflix': "https://netflix.com",
+                'Disney+': "https://disneyplus.com",
+                'HBO Max': "https://hbomax.com"
+            },
+            'СНГ': {
+                'Кинопоиск': "https://kinopoisk.ru",
+                'Okko': "https://okko.tv",
+                'Ivi': "https://ivi.ru"
+            }
+        }
+        
+        # Выбираем несколько сервисов для разнообразия
+        import random
+        selected_services = []
+        
+        # Выбираем 2-3 случайных сервиса из разных регионов
+        all_services = []
+        for region, services in streaming_links.items():
+            for service, link in services.items():
+                all_services.append((service, link, region))
+        
+        # Выбираем 2-3 случайных сервиса
+        num_services = random.randint(2, 3)
+        selected_services = random.sample(all_services, min(num_services, len(all_services)))
         
         message += f"{i}. **{title}**\n"
         message += f"📝 {overview}\n"
-        message += f"🎥 [Смотреть на Netflix]({netflix_link})\n\n"
+        
+        # Добавляем ссылки на несколько сервисов
+        for service, link, region in selected_services:
+            message += f"🎥 [Смотреть на {service} ({region})]({link})\n"
+        message += "\n"
     
     return message
 
