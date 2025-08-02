@@ -1578,38 +1578,59 @@ async def handle_survey_type_selection(query, context):
     await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def handle_survey_year_selection(query, context):
-    """Обработка выбора года и завершение опросника"""
+    """Обработка выбора года в одиночном опроснике"""
     user_id = query.from_user.id
     chat_id = query.message.chat.id
     year_range = query.data.replace("survey_year_", "")
     
-    # Сохраняем все данные опросника
+    # Получаем данные из context.user_data
     selected_genres = context.user_data.get('selected_genres', [])
     content_type = context.user_data.get('content_type', 'movie')
     
+    # Сохраняем данные опросника
     save_survey_data(user_id, chat_id, selected_genres, content_type, year_range)
     
-    # Получаем фильмы на основе опросника
-    movies = get_movies_by_survey(selected_genres, content_type, year_range, 26)
-    
-    # Создаем игру (одиночный режим)
-    game_id = create_game(user_id, chat_id, 'single', movies)
-    
-    # Показываем результат опросника
+    # Показываем результат
     selected_genres_names = [GENRES[g]['name'] for g in selected_genres]
     content_type_name = CONTENT_TYPES[content_type]
     year_range_name = YEAR_RANGES[year_range]['name']
     
     message = "✅ **Опросник завершен!**\n\n"
-    message += f"🎬 Жанры: {', '.join(selected_genres_names)}\n"
-    message += f"📺 Тип: {content_type_name}\n"
-    message += f"📅 Годы: {year_range_name}\n\n"
-    message += "🎮 Начинаем битву фильмов!"
+    message += f"🎬 Твои жанры: {', '.join(selected_genres_names)}\n"
+    message += f"📺 Твой тип: {content_type_name}\n"
+    message += f"📅 Твои годы: {year_range_name}\n\n"
+    message += "🎮 Начинаем игру!"
     
     await query.edit_message_text(message, parse_mode='Markdown')
     
+    # Получаем фильмы на основе опросника
+    movies = get_movies_by_survey(selected_genres, content_type, year_range, 26)
+    
+    # Создаем игру
+    game_id = create_game(user_id, chat_id, 'single', movies)
+    
     # Начинаем первый раунд
-    await start_battle_round(query, context, game_id, movies) 
+    await start_battle_round(query, context, game_id, movies)
+
+async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сброс опросника пользователя"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # Очищаем временные данные
+    clear_user_survey_temp_data(user_id, chat_id)
+    
+    # Удаляем завершенный опросник из базы данных
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM surveys WHERE user_id = ? AND chat_id = ?', (user_id, chat_id))
+    conn.commit()
+    conn.close()
+    
+    # Сбрасываем состояние пользователя
+    save_user_state(user_id, 'waiting_mode')
+    
+    await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
 
 def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
     """Сохранение временных данных опросника пользователя"""
@@ -1702,23 +1723,3 @@ def clear_user_survey_temp_data(user_id: int, chat_id: int):
     
     conn.commit()
     conn.close() 
-
-async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сброс опросника пользователя"""
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    
-    # Очищаем временные данные
-    clear_user_survey_temp_data(user_id, chat_id)
-    
-    # Удаляем завершенный опросник из базы данных
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM surveys WHERE user_id = ? AND chat_id = ?', (user_id, chat_id))
-    conn.commit()
-    conn.close()
-    
-    # Сбрасываем состояние пользователя
-    save_user_state(user_id, 'waiting_mode')
-    
-    await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
