@@ -1326,7 +1326,15 @@ async def handle_group_survey_year_selection(query, context):
     message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
     
     # Показываем сообщение о завершении опросника
-    await query.edit_message_text(message)
+    try:
+        await query.edit_message_text(message)
+    except Exception as e:
+        if "Message is not modified" in str(e):
+            logger.info("Сообщение не изменилось, это нормально")
+        else:
+            logger.warning(f"Ошибка при редактировании сообщения: {e}")
+            # Отправляем новое сообщение вместо редактирования
+            await context.bot.send_message(chat_id, message)
     
     # Отправляем уведомление в группу
     try:
