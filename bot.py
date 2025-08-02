@@ -760,11 +760,16 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
-    # Отправляем личное сообщение пользователю
-    await context.bot.send_message(user_id, message, reply_markup=reply_markup, parse_mode='Markdown')
-    
-    # Отправляем подтверждение в группу
-    await update.message.reply_text(f"✅ @{update.effective_user.username or update.effective_user.first_name}, тебе отправлен опросник в личные сообщения!")
+    try:
+        # Пытаемся отправить личное сообщение пользователю
+        await context.bot.send_message(user_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+        
+        # Отправляем подтверждение в группу
+        await update.message.reply_text(f"✅ @{update.effective_user.username or update.effective_user.first_name}, тебе отправлен опросник в личные сообщения!")
+    except Exception as e:
+        # Если не удалось отправить в личные сообщения, отправляем в группу
+        logger.warning(f"Не удалось отправить личное сообщение пользователю {user_id}: {e}")
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
@@ -1080,9 +1085,12 @@ async def handle_group_survey_year_selection(query, context):
         await query.edit_message_text(message, parse_mode='Markdown')
         
         # Отправляем уведомление в группу
-        user_name = query.from_user.first_name or query.from_user.username or "Участник"
-        group_message = f"🎉 **{user_name}** завершил опросник! Все участники готовы!"
-        await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+        try:
+            user_name = query.from_user.first_name or query.from_user.username or "Участник"
+            group_message = f"🎉 **{user_name}** завершил опросник! Все участники готовы!"
+            await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+        except Exception as e:
+            logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
         
         # Небольшая задержка для показа сообщения
         import asyncio
@@ -1094,9 +1102,12 @@ async def handle_group_survey_year_selection(query, context):
         await query.edit_message_text(message, parse_mode='Markdown')
         
         # Отправляем уведомление в группу
-        user_name = query.from_user.first_name or query.from_user.username or "Участник"
-        group_message = f"✅ **{user_name}** завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
-        await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+        try:
+            user_name = query.from_user.first_name or query.from_user.username or "Участник"
+            group_message = f"✅ **{user_name}** завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
+            await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+        except Exception as e:
+            logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
 
 def get_survey_participants_count(chat_id: int):
     """Получение количества участников, прошедших опросник"""
@@ -1146,7 +1157,10 @@ async def start_group_game_from_survey(query, context, chat_id):
     message += "⚔️ Начинаем битву фильмов!"
     
     # Отправляем сообщение в группу
-    await context.bot.send_message(chat_id, message, parse_mode='Markdown')
+    try:
+        await context.bot.send_message(chat_id, message, parse_mode='Markdown')
+    except Exception as e:
+        logger.warning(f"Не удалось отправить сообщение в группу {chat_id}: {e}")
     
     # Начинаем первый раунд - отправляем в группу
     await start_battle_round_group(context, chat_id, game_id, movies)
@@ -1195,7 +1209,10 @@ async def start_battle_round_group(context, chat_id, game_id, movies_list):
     update_game_round(game_id, current_round, current_pair)
     
     # Отправляем сообщение в группу
-    await context.bot.send_message(chat_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+    try:
+        await context.bot.send_message(chat_id, message, reply_markup=reply_markup, parse_mode='Markdown')
+    except Exception as e:
+        logger.warning(f"Не удалось отправить сообщение в группу {chat_id}: {e}")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
