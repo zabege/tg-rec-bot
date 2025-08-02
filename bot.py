@@ -731,7 +731,7 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if existing_survey and not temp_data['selected_genres']:
         # Пользователь уже завершил опросник
         survey_count = get_survey_participants_count(chat_id)
-        chat_members_count = await update.bot.get_chat_member_count(chat_id)
+        chat_members_count = await context.bot.get_chat_member_count(chat_id)
         
         message = "✅ **Ты уже проходил опросник в этой группе!**\n\n"
         message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
@@ -1251,18 +1251,24 @@ async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
+    logger.info(f"Сброс опросника для пользователя {user_id} в чате {chat_id}")
+    
     # Очищаем временные данные
     clear_user_survey_temp_data(user_id, chat_id)
+    logger.info(f"Временные данные очищены для пользователя {user_id}")
     
     # Удаляем завершенный опросник из базы данных
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('DELETE FROM surveys WHERE user_id = ? AND chat_id = ?', (user_id, chat_id))
+    deleted_count = cursor.rowcount
     conn.commit()
     conn.close()
+    logger.info(f"Удалено {deleted_count} записей опросника для пользователя {user_id}")
     
     # Сбрасываем состояние пользователя
     save_user_state(user_id, 'waiting_mode')
+    logger.info(f"Состояние пользователя {user_id} сброшено на 'waiting_mode'")
     
     await update.message.reply_text("🔄 **Опросник сброшен!**\nТеперь можешь начать заново командой /battle", parse_mode='Markdown')
 
