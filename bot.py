@@ -720,7 +720,19 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Проверяем, не проходил ли пользователь уже опросник
     existing_survey = get_survey_data(user_id, chat_id)
     if existing_survey:
-        await update.message.reply_text("Ты уже проходил опросник в этой группе!")
+        # Показываем статус опросника
+        survey_count = get_survey_participants_count(chat_id)
+        chat_members_count = await update.bot.get_chat_member_count(chat_id)
+        
+        message = "✅ **Ты уже проходил опросник в этой группе!**\n\n"
+        message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
+        
+        if survey_count >= min(chat_members_count - 1, 3):
+            message += "\n🎮 Все участники завершили опросник! Игра должна начаться скоро..."
+        else:
+            message += "\n⏳ Ждем других участников..."
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
         return
     
     save_user_state(user_id, GAME_STATES['SURVEY_GENRES'])
@@ -832,7 +844,11 @@ async def start_battle_round(update, context, game_id, movies_list):
     if hasattr(update, 'edit_message_text'):
         await update.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     else:
-        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        # Для группового режима отправляем новое сообщение в группу
+        if hasattr(update, 'message') and update.message.chat.type != 'private':
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 def get_current_game_by_id(game_id: int):
     """Получение игры по ID"""
@@ -1016,19 +1032,34 @@ async def handle_group_survey_year_selection(query, context):
     
     save_survey_data(user_id, chat_id, selected_genres, content_type, year_range)
     
+    # Показываем сообщение о завершении опросника
+    selected_genres_names = [GENRES[g]['name'] for g in selected_genres]
+    content_type_name = CONTENT_TYPES[content_type]
+    year_range_name = YEAR_RANGES[year_range]['name']
+    
+    message = "✅ **Твой опросник завершен!**\n\n"
+    message += f"🎬 Твои жанры: {', '.join(selected_genres_names)}\n"
+    message += f"📺 Твой тип: {content_type_name}\n"
+    message += f"📅 Твои годы: {year_range_name}\n\n"
+    
     # Проверяем, сколько участников прошли опросник
     survey_count = get_survey_participants_count(chat_id)
     chat_members_count = await query.bot.get_chat_member_count(chat_id)
     
+    message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
+    
     # Если прошли опросник все участники или большинство, начинаем игру
     if survey_count >= min(chat_members_count - 1, 3):  # -1 для бота, минимум 3 участника
+        message += "\n🎮 Все участники завершили опросник! Начинаем игру..."
+        await query.edit_message_text(message, parse_mode='Markdown')
+        
+        # Небольшая задержка для показа сообщения
+        import asyncio
+        await asyncio.sleep(2)
+        
         await start_group_game_from_survey(query, context, chat_id)
     else:
-        # Показываем статус и ждем других участников
-        message = "✅ **Твой опросник завершен!**\n\n"
-        message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
-        message += "⏳ Ждем других участников..."
-        
+        message += "\n⏳ Ждем других участников..."
         await query.edit_message_text(message, parse_mode='Markdown')
 
 def get_survey_participants_count(chat_id: int):
@@ -1067,21 +1098,28 @@ async def start_group_game_from_survey(query, context, chat_id):
     user_id = query.from_user.id
     game_id = create_game(user_id, chat_id, 'group', movies)
     
-    # Показываем результат опросника
+    # Показываем результат опросника в группе
     selected_genres_names = [GENRES[g]['name'] for g in survey_data['selected_genres']]
     content_type_name = CONTENT_TYPES[survey_data['content_type']]
     year_range_name = YEAR_RANGES[survey_data['year_range']]['name']
     
     message = "🎮 **Групповой опросник завершен!**\n\n"
-    message += f"🎬 Выбранные жанры: {', '.join(selected_genres_names)}\n"
-    message += f"📺 Тип контента: {content_type_name}\n"
-    message += f"📅 Годы: {year_range_name}\n\n"
+    message += f"🎬 Итоговые жанры: {', '.join(selected_genres_names)}\n"
+    message += f"📺 Итоговый тип: {content_type_name}\n"
+    message += f"📅 Итоговые годы: {year_range_name}\n\n"
     message += "⚔️ Начинаем битву фильмов!"
     
-    await query.edit_message_text(message, parse_mode='Markdown')
+    # Отправляем сообщение в группу
+    await context.bot.send_message(chat_id, message, parse_mode='Markdown')
     
-    # Начинаем первый раунд
-    await start_battle_round(query, context, game_id, movies)
+    # Начинаем первый раунд - создаем фейковый update для группового сообщения
+    class FakeUpdate:
+        def __init__(self, chat_id, bot):
+            self.message = type('Message', (), {'chat': type('Chat', (), {'id': chat_id, 'type': 'group'})})()
+            self.bot = bot
+    
+    fake_update = FakeUpdate(chat_id, context.bot)
+    await start_battle_round(fake_update, context, game_id, movies)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
