@@ -585,14 +585,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Новая битва
         await start(query, context)
     
-    elif query.data.startswith("next_round_"):
-        # Следующий раунд в групповом режиме
-        game_id = int(query.data.split("_")[2])
-        game = get_current_game_by_id(game_id)
-        if game:
-            import json
-            movies_list = json.loads(game[4])  # movies_list
-            await start_battle_round(query, context, game_id, movies_list)
+    # Убрали обработчик next_round, так как переход стал автоматическим
 
 async def process_vote(query, context, game_id, vote):
     """Обработка голосования"""
@@ -650,51 +643,91 @@ async def process_vote(query, context, game_id, vote):
             await start_battle_round(query, context, game_id, movies_list)
     
     else:
-        # Групповой режим - показываем результаты голосования
+        # Групповой режим - показываем обновленные результаты голосования
         vote1_count = sum(1 for v in votes.values() if v == 1)
         vote2_count = sum(1 for v in votes.values() if v == 2)
         
-        message = f"📊 **Результаты голосования:**\n\n"
+        # Показываем кто проголосовал
+        voter_name = query.from_user.first_name or query.from_user.username or "Участник"
+        message = f"🗳️ **{voter_name}** проголосовал!\n\n"
+        message += f"📊 **Текущие результаты:**\n"
         message += f"🎬 {current_pair_movies[0]['title']}: {vote1_count} голосов\n"
         message += f"🎬 {current_pair_movies[1]['title']}: {vote2_count} голосов\n\n"
         
-        if vote1_count > vote2_count:
-            winner = current_pair_movies[0]
-            loser = current_pair_movies[1]
-        elif vote2_count > vote1_count:
-            winner = current_pair_movies[1]
-            loser = current_pair_movies[0]
+        # Проверяем, нужно ли завершить раунд
+        total_votes = len(votes)
+        chat_members_count = await context.bot.get_chat_member_count(game[2])  # chat_id
+        
+        # Если проголосовали все участники или прошло достаточно времени, завершаем раунд
+        if total_votes >= min(chat_members_count - 1, 10):  # -1 для бота, максимум 10 голосов
+            await finish_group_round(query, context, game_id, movies_list, current_pair_movies, votes)
         else:
-            # Ничья - случайный выбор
-            winner = random.choice(current_pair_movies)
-            loser = current_pair_movies[1] if winner == current_pair_movies[0] else current_pair_movies[0]
-        
-        message += f"🏆 **Победитель раунда:** {winner['title']}\n\n"
-        
-        # Удаляем проигравший фильм
-        movies_list.remove(loser)
-        
-        # Обновляем список фильмов
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        cursor.execute('UPDATE games SET movies_list = ? WHERE game_id = ?', 
-                      (json.dumps(movies_list), game_id))
-        conn.commit()
-        conn.close()
-        
-        # Если остался один фильм - игра окончена
-        if len(movies_list) == 1:
-            winner = movies_list[0]
-            result_message = format_battle_result(winner, game_type)
-            keyboard = [[InlineKeyboardButton("🔄 Новая битва", callback_data="new_battle")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(result_message, reply_markup=reply_markup, parse_mode='Markdown')
-        else:
-            # Увеличиваем номер раунда и продолжаем игру
-            increment_game_round(game_id)
-            keyboard = [[InlineKeyboardButton("➡️ Следующий раунд", callback_data=f"next_round_{game_id}")]]
+            # Показываем кнопки для продолжения голосования
+            keyboard = [
+                [
+                    InlineKeyboardButton(f"🎬 {current_pair_movies[0]['title'][:15]}...", callback_data=f"vote_1_{game_id}"),
+                    InlineKeyboardButton(f"🎬 {current_pair_movies[1]['title'][:15]}...", callback_data=f"vote_2_{game_id}")
+                ]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def finish_group_round(query, context, game_id, movies_list, current_pair_movies, votes):
+    """Завершение раунда в групповом режиме"""
+    import json
+    
+    vote1_count = sum(1 for v in votes.values() if v == 1)
+    vote2_count = sum(1 for v in votes.values() if v == 2)
+    
+    message = f"📊 **Финальные результаты голосования:**\n\n"
+    message += f"🎬 {current_pair_movies[0]['title']}: {vote1_count} голосов\n"
+    message += f"🎬 {current_pair_movies[1]['title']}: {vote2_count} голосов\n\n"
+    
+    # Определяем победителя
+    if vote1_count > vote2_count:
+        winner = current_pair_movies[0]
+        loser = current_pair_movies[1]
+        message += f"🏆 **Победитель раунда:** {winner['title']}\n\n"
+    elif vote2_count > vote1_count:
+        winner = current_pair_movies[1]
+        loser = current_pair_movies[0]
+        message += f"🏆 **Победитель раунда:** {winner['title']}\n\n"
+    else:
+        # Ничья - случайный выбор
+        winner = random.choice(current_pair_movies)
+        loser = current_pair_movies[1] if winner == current_pair_movies[0] else current_pair_movies[0]
+        message += f"🏆 **Победитель раунда (ничья):** {winner['title']}\n\n"
+    
+    # Удаляем проигравший фильм
+    movies_list.remove(loser)
+    
+    # Обновляем список фильмов
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE games SET movies_list = ? WHERE game_id = ?', 
+                  (json.dumps(movies_list), game_id))
+    conn.commit()
+    conn.close()
+    
+    # Если остался один фильм - игра окончена
+    if len(movies_list) == 1:
+        winner = movies_list[0]
+        result_message = format_battle_result(winner, 'group')
+        keyboard = [[InlineKeyboardButton("🔄 Новая битва", callback_data="new_battle")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(result_message, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        # Автоматически переходим к следующему раунду через 3 секунды
+        message += "⏳ Переход к следующему раунду через 3 секунды..."
+        await query.edit_message_text(message, parse_mode='Markdown')
+        
+        # Увеличиваем номер раунда
+        increment_game_round(game_id)
+        
+        # Ждем 3 секунды и переходим к следующему раунду
+        import asyncio
+        await asyncio.sleep(3)
+        await start_battle_round(query, context, game_id, movies_list)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
