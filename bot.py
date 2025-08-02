@@ -260,55 +260,19 @@ def get_active_group_game(chat_id: int):
 
 def get_group_survey_data(chat_id: int):
     """Получение данных группового опросника"""
-    import json
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT selected_genres, content_type, year_range 
+        SELECT user_id, selected_genres, content_type, year_range 
         FROM surveys 
         WHERE chat_id = ?
-        ORDER BY created_at DESC
     ''', (chat_id,))
     
     results = cursor.fetchall()
     conn.close()
     
-    if not results:
-        return None
-    
-    # Объединяем данные всех участников
-    all_genres = []
-    content_types = {}
-    year_ranges = {}
-    
-    for result in results:
-        genres = json.loads(result[0])
-        content_type = result[1]
-        year_range = result[2]
-        
-        all_genres.extend(genres)
-        content_types[content_type] = content_types.get(content_type, 0) + 1
-        year_ranges[year_range] = year_ranges.get(year_range, 0) + 1
-    
-    # Выбираем наиболее популярные варианты
-    most_popular_content = max(content_types.items(), key=lambda x: x[1])[0]
-    most_popular_year = max(year_ranges.items(), key=lambda x: x[1])[0]
-    
-    # Убираем дубликаты жанров и берем топ-3
-    unique_genres = list(set(all_genres))
-    genre_counts = {}
-    for genre in all_genres:
-        genre_counts[genre] = genre_counts.get(genre, 0) + 1
-    
-    top_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:3]
-    selected_genres = [genre for genre, count in top_genres]
-    
-    return {
-        'selected_genres': selected_genres,
-        'content_type': most_popular_content,
-        'year_range': most_popular_year
-    }
+    return results
 
 def get_movies_by_survey(selected_genres: list, content_type: str, year_range: str, count: int = 26):
     """Получение фильмов на основе опросника"""
@@ -1665,94 +1629,5 @@ async def handle_survey_year_selection(query, context):
     # Начинаем первый раунд
     await start_battle_round(query, context, game_id, movies)
 
-def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
-    """Сохранение временных данных опросника пользователя"""
-    import json
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    
-    # Создаем таблицу для временных данных опроса, если её нет
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS survey_temp_data (
-            user_id INTEGER,
-            chat_id INTEGER,
-            selected_genres TEXT,
-            content_type TEXT,
-            year_range TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, chat_id)
-        )
-    ''')
-    
-    # Получаем текущие данные
-    cursor.execute('''
-        SELECT selected_genres, content_type, year_range 
-        FROM survey_temp_data 
-        WHERE user_id = ? AND chat_id = ?
-    ''', (user_id, chat_id))
-    
-    result = cursor.fetchone()
-    current_data = {
-        'selected_genres': json.loads(result[0]) if result and result[0] else [],
-        'content_type': result[1] if result else 'movie',
-        'year_range': result[2] if result else None
-    }
-    
-    # Обновляем только переданные данные
-    if selected_genres is not None:
-        current_data['selected_genres'] = selected_genres
-    if content_type is not None:
-        current_data['content_type'] = content_type
-    if year_range is not None:
-        current_data['year_range'] = year_range
-    
-    # Сохраняем обновленные данные
-    cursor.execute('''
-        INSERT OR REPLACE INTO survey_temp_data (user_id, chat_id, selected_genres, content_type, year_range)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, chat_id, json.dumps(current_data['selected_genres']), current_data['content_type'], current_data['year_range']))
-    
-    conn.commit()
-    conn.close()
-    
-    return current_data
-
-def get_user_survey_temp_data(user_id: int, chat_id: int):
-    """Получение временных данных опросника пользователя"""
-    import json
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT selected_genres, content_type, year_range 
-        FROM survey_temp_data 
-        WHERE user_id = ? AND chat_id = ?
-    ''', (user_id, chat_id))
-    
-    result = cursor.fetchone()
-    conn.close()
-    
-    if result:
-        return {
-            'selected_genres': json.loads(result[0]) if result[0] else [],
-            'content_type': result[1] if result[1] else 'movie',
-            'year_range': result[2]
-        }
-    return {
-        'selected_genres': [],
-        'content_type': 'movie',
-        'year_range': None
-    }
-
-def clear_user_survey_temp_data(user_id: int, chat_id: int):
-    """Очистка временных данных опросника пользователя"""
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        DELETE FROM survey_temp_data 
-        WHERE user_id = ? AND chat_id = ?
-    ''', (user_id, chat_id))
-    
-    conn.commit()
-    conn.close() 
+if __name__ == '__main__':
+    main() 
