@@ -272,20 +272,45 @@ def get_active_group_game(chat_id: int):
     return result
 
 def get_group_survey_data(chat_id: int):
-    """Получение данных группового опросника"""
+    """Получает объединенные данные всех завершенных опросников для данного группового чата."""
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT user_id, selected_genres, content_type, year_range 
-        FROM surveys 
-        WHERE chat_id = ?
-    ''', (chat_id,))
-    
+    cursor.execute('SELECT user_id, selected_genres, content_type, year_range FROM surveys WHERE chat_id = ?', (chat_id,))
     results = cursor.fetchall()
     conn.close()
     
-    return results
+    if not results:
+        return None
+    
+    # Объединяем данные всех участников
+    all_genres = set()
+    content_types = {}
+    year_ranges = {}
+    
+    for row in results:
+        user_id = row[0]
+        genres = json.loads(row[1])
+        content_type = row[2]
+        year_range = row[3]
+        
+        # Добавляем жанры
+        all_genres.update(genres)
+        
+        # Подсчитываем типы контента
+        content_types[content_type] = content_types.get(content_type, 0) + 1
+        
+        # Подсчитываем годы
+        year_ranges[year_range] = year_ranges.get(year_range, 0) + 1
+    
+    # Выбираем наиболее популярные варианты
+    most_popular_content_type = max(content_types.items(), key=lambda x: x[1])[0]
+    most_popular_year_range = max(year_ranges.items(), key=lambda x: x[1])[0]
+    
+    return {
+        'selected_genres': list(all_genres),
+        'content_type': most_popular_content_type,
+        'year_range': most_popular_year_range
+    }
 
 def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
     """Сохранение временных данных опросника пользователя"""
@@ -858,40 +883,26 @@ async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAU
     chat_id = update.effective_chat.id
     
     try:
-        # Отправляем сообщение о начале опросника
-        await update.message.reply_text(
-            "🎬 **Начинаем групповой опросник!**\n\n"
-            "Каждый участник должен пройти опросник, чтобы начать игру.\n"
-            "Нажмите на кнопку ниже, чтобы начать свой опросник.",
+        # Создаем кнопку для начала опросника
+        keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Отправляем общий опросник в группу
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🎯 **Групповой опросник**\n\n"
+                 "Каждый участник должен пройти опросник индивидуально.\n"
+                 "Нажмите кнопку ниже, чтобы начать свой опросник.",
+            reply_markup=reply_markup,
             parse_mode='Markdown'
         )
-        
-        # Отправляем индивидуальную кнопку для каждого участника
-        await send_individual_survey_button(update.effective_user.id, chat_id, context)
         
     except Exception as e:
         logger.error(f"Ошибка при отправке группового опросника: {e}")
         # Если не удалось отправить общий опросник, отправляем индивидуальный
         await start_group_survey(update, context)
 
-async def send_individual_survey_button(user_id: int, chat_id: int, context):
-    """Отправка индивидуальной кнопки опросника для пользователя"""
-    try:
-        # Создаем кнопку для начала опросника
-        keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Отправляем индивидуальное сообщение пользователю
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="🎯 **Твой опросник**\n\n"
-                 "Нажми кнопку ниже, чтобы начать свой опросник.",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка при отправке индивидуальной кнопки для пользователя {user_id}: {e}")
+
 
 async def start_individual_group_survey(query, context):
     """Начало индивидуального опросника для участника группы (через кнопку)"""
@@ -1169,16 +1180,25 @@ async def handle_group_survey_genre_selection(query, context):
     chat_id = query.message.chat.id
     genre_key = query.data.replace("group_survey_genre_", "")
     
+    logger.info(f"Выбор жанра: user_id={user_id}, genre_key={genre_key}, callback_data={query.data}")
+    
     # Получаем текущие данные пользователя из базы данных
     user_data = get_user_survey_temp_data(user_id, chat_id)
     selected_genres = user_data['selected_genres']
     
     # Переключаем выбор жанра
+    logger.info(f"Текущие выбранные жанры: {selected_genres}")
     if genre_key in selected_genres:
         selected_genres.remove(genre_key)
+        logger.info(f"Удален жанр: {genre_key}")
     else:
         if len(selected_genres) < 3:
             selected_genres.append(genre_key)
+            logger.info(f"Добавлен жанр: {genre_key}")
+        else:
+            logger.info(f"Нельзя добавить жанр {genre_key}: уже выбрано 3 жанра")
+    
+    logger.info(f"Обновленные выбранные жанры: {selected_genres}")
     
     # Сохраняем обновленные данные
     save_user_survey_temp_data(user_id, chat_id, selected_genres=selected_genres)
@@ -1355,7 +1375,7 @@ async def start_group_game_from_survey(query, context, chat_id):
         return
     
     # Получаем фильмы на основе опросника
-    movies = get_movies_by_survey(
+    movies = await get_movies_by_survey(
         survey_data['selected_genres'],
         survey_data['content_type'],
         survey_data['year_range'],
@@ -1745,11 +1765,18 @@ async def handle_survey_genre_selection(query, context):
     selected_genres = context.user_data['selected_genres']
     
     # Переключаем выбор жанра
+    logger.info(f"Текущие выбранные жанры: {selected_genres}")
     if genre_key in selected_genres:
         selected_genres.remove(genre_key)
+        logger.info(f"Удален жанр: {genre_key}")
     else:
         if len(selected_genres) < 3:
             selected_genres.append(genre_key)
+            logger.info(f"Добавлен жанр: {genre_key}")
+        else:
+            logger.info(f"Нельзя добавить жанр {genre_key}: уже выбрано 3 жанра")
+    
+    logger.info(f"Обновленные выбранные жанры: {selected_genres}")
     
     # Обновляем кнопки
     keyboard = []
