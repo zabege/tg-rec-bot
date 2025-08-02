@@ -112,6 +112,19 @@ def init_database():
         )
     ''')
     
+    # Таблица временных данных опросников
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS survey_temp_data (
+            user_id INTEGER,
+            chat_id INTEGER,
+            selected_genres TEXT,
+            content_type TEXT,
+            year_range TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, chat_id)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -279,19 +292,6 @@ def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list
     import json
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    
-    # Создаем таблицу для временных данных опроса, если её нет
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS survey_temp_data (
-            user_id INTEGER,
-            chat_id INTEGER,
-            selected_genres TEXT,
-            content_type TEXT,
-            year_range TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, chat_id)
-        )
-    ''')
     
     # Получаем текущие данные
     cursor.execute('''
