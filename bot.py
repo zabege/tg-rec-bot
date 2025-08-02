@@ -1335,13 +1335,14 @@ async def handle_group_survey_year_selection(query, context):
     except Exception as e:
         logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
     
-    # Проверяем, кто ещё не прошёл опросник
-    survey_user_ids = get_survey_user_ids(chat_id)
-    all_user_ids = await get_all_group_user_ids(context, chat_id)
-    not_passed = all_user_ids - survey_user_ids
-    logger.info(f"В чате {chat_id} опросник прошли: {survey_user_ids}, не прошли: {not_passed}")
+    # Проверяем, достаточно ли участников прошли опросник
+    survey_count = get_survey_participants_count(chat_id)
+    chat_members_count = await context.bot.get_chat_member_count(chat_id)
+    expected_participants = max(chat_members_count - 1, 2)  # Минимум 2 участника
     
-    if not_passed:
+    logger.info(f"В чате {chat_id} опросник прошли: {survey_count}, ожидается: {expected_participants}")
+    
+    if survey_count < expected_participants:
         # Отправляем кнопку "Начать опросник" снова
         keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1353,7 +1354,7 @@ async def handle_group_survey_year_selection(query, context):
             reply_markup=reply_markup
         )
     else:
-        logger.info(f"Все участники прошли опросник в чате {chat_id}. Начинаем игру!")
+        logger.info(f"Достаточно участников прошли опросник в чате {chat_id}. Начинаем игру!")
         # Запускаем игру
         await start_group_game_from_survey(query, context, chat_id)
 
@@ -1390,10 +1391,20 @@ def get_survey_user_ids(chat_id: int):
 async def get_all_group_user_ids(context, chat_id: int):
     """Получение списка всех пользователей в группе (кроме бота)"""
     try:
+        # Получаем количество участников группы
+        chat_member_count = await context.bot.get_chat_member_count(chat_id)
+        logger.info(f"Общее количество участников в группе {chat_id}: {chat_member_count}")
+        
         # Получаем администраторов группы (это все, что мы можем получить без специальных прав)
         chat_members = await context.bot.get_chat_administrators(chat_id)
         user_ids = {member.user.id for member in chat_members if not member.user.is_bot}
-        logger.info(f"Получено {len(user_ids)} пользователей из группы {chat_id}")
+        logger.info(f"Получено {len(user_ids)} администраторов из группы {chat_id}")
+        
+        # Для простоты считаем, что все участники группы должны пройти опросник
+        # Возвращаем количество участников минус 1 (бот)
+        expected_participants = max(chat_member_count - 1, len(user_ids))
+        logger.info(f"Ожидаемое количество участников для опросника: {expected_participants}")
+        
         return user_ids
     except Exception as e:
         logger.warning(f"Не удалось получить список пользователей группы {chat_id}: {e}")
