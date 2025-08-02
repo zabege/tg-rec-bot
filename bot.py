@@ -3,6 +3,7 @@ import logging
 import sqlite3
 import requests
 import random
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
@@ -321,7 +322,6 @@ def get_group_survey_data(chat_id: int):
 
 def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
     """Сохранение временных данных опросника пользователя"""
-    import json
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     
@@ -360,7 +360,6 @@ def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list
 
 def get_user_survey_temp_data(user_id: int, chat_id: int):
     """Получение временных данных опросника пользователя"""
-    import json
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     
@@ -1002,8 +1001,6 @@ async def start_individual_group_survey(query, context):
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
-    import json
-    
     game = get_active_group_game(update.effective_chat.id)
     if not game:
         return
@@ -1039,8 +1036,6 @@ async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def start_battle_round(update, context, game_id, movies_list):
     """Начало раунда битвы"""
-    import json
-    
     # Получаем текущую игру
     game = get_current_game_by_id(game_id)
     if not game:
@@ -1457,8 +1452,6 @@ async def start_group_game_from_survey(query, context, chat_id):
 
 async def start_battle_round_group(context, chat_id, game_id, movies_list):
     """Начало раунда битвы в группе"""
-    import json
-    
     logger.info(f"Начало start_battle_round_group для игры {game_id}, чат {chat_id}, фильмов: {len(movies_list)}")
     
     # Получаем текущую игру
