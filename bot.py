@@ -1377,6 +1377,34 @@ def get_survey_participants_count(chat_id: int):
     conn.close()
     return result[0] if result else 0
 
+def get_survey_user_ids(chat_id: int):
+    """Получение списка ID пользователей, прошедших опросник"""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT DISTINCT user_id 
+        FROM surveys 
+        WHERE chat_id = ?
+    ''', (chat_id,))
+    
+    results = cursor.fetchall()
+    conn.close()
+    return {row[0] for row in results}
+
+async def get_all_group_user_ids(context, chat_id: int):
+    """Получение списка всех пользователей в группе (кроме бота)"""
+    try:
+        # Получаем администраторов группы (это все, что мы можем получить без специальных прав)
+        chat_members = await context.bot.get_chat_administrators(chat_id)
+        user_ids = {member.user.id for member in chat_members if not member.user.is_bot}
+        logger.info(f"Получено {len(user_ids)} пользователей из группы {chat_id}")
+        return user_ids
+    except Exception as e:
+        logger.warning(f"Не удалось получить список пользователей группы {chat_id}: {e}")
+        # Возвращаем пустой набор в случае ошибки
+        return set()
+
 async def start_group_game_from_survey(query, context, chat_id):
     """Запуск групповой игры на основе опросника"""
     logger.info(f"Начало start_group_game_from_survey для чата {chat_id}")
