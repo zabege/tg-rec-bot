@@ -904,6 +904,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await process_vote(query, context, game_id, vote)
     
+    elif query.data.startswith("finish_round_"):
+        # Принудительное завершение раунда
+        game_id = int(query.data.split("_")[2])
+        await finish_round_manually(query, context, game_id)
+    
     elif query.data == "new_battle":
         # Новая битва
         await start(query, context)
@@ -1135,6 +1140,12 @@ async def process_vote(query, context, game_id, vote):
     
     # Добавляем голос
     user_id = query.from_user.id
+    
+    # Проверяем, не голосовал ли уже этот пользователь
+    if str(user_id) in votes:
+        await query.answer("Ты уже проголосовал в этом раунде!")
+        return
+    
     votes[str(user_id)] = vote
     
     # Сохраняем голоса
@@ -1180,6 +1191,15 @@ async def process_vote(query, context, game_id, vote):
         message += f"🎬 {current_pair_movies[0]['title']}: {vote1_count} голосов\n"
         message += f"🎬 {current_pair_movies[1]['title']}: {vote2_count} голосов\n\n"
         
+        # Показываем список проголосовавших
+        if votes:
+            voted_users = []
+            for user_id_str in votes.keys():
+                # Здесь можно было бы получить имена пользователей, но пока показываем количество
+                voted_users.append(f"👤 Участник {len(voted_users) + 1}")
+            
+            message += f"✅ **Проголосовали:** {', '.join(voted_users)}\n\n"
+        
         # Показываем полные описания фильмов
         message += f"🎬 **{current_pair_movies[0]['title']}**\n"
         message += f"📝 {current_pair_movies[0].get('overview', 'Описание отсутствует')}\n\n"
@@ -1190,9 +1210,23 @@ async def process_vote(query, context, game_id, vote):
         total_votes = len(votes)
         chat_members_count = await context.bot.get_chat_member_count(game[2])  # chat_id
         
-        # Если проголосовали все участники или прошло достаточно времени, завершаем раунд
-        if total_votes >= min(chat_members_count - 1, 10):  # -1 для бота, максимум 10 голосов
-            await finish_group_round(query, context, game_id, movies_list, current_pair_movies, votes)
+        # Показываем прогресс голосования
+        message += f"📊 **Прогресс:** {total_votes}/{chat_members_count - 1} участников проголосовали\n\n"
+        
+        # Завершаем раунд только если проголосовали все участники или минимум 3 участника
+        min_votes_required = max(3, min(chat_members_count - 1, 5))  # Минимум 3, максимум 5 голосов
+        
+        if total_votes >= min_votes_required:
+            # Добавляем кнопку для принудительного завершения раунда
+            keyboard = [
+                [
+                    InlineKeyboardButton(f"🎬 {current_pair_movies[0]['title']}", callback_data=f"vote_1_{game_id}"),
+                    InlineKeyboardButton(f"🎬 {current_pair_movies[1]['title']}", callback_data=f"vote_2_{game_id}")
+                ],
+                [InlineKeyboardButton("✅ Завершить раунд", callback_data=f"finish_round_{game_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
         else:
             # Показываем кнопки для продолжения голосования
             keyboard = [
@@ -1203,6 +1237,26 @@ async def process_vote(query, context, game_id, vote):
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def finish_round_manually(query, context, game_id):
+    """Принудительное завершение раунда"""
+    import json
+    
+    # Получаем текущую игру
+    game = get_current_game_by_id(game_id)
+    if not game:
+        return
+    
+    movies_json = game[4]  # movies_list
+    current_pair = game[7]  # current_pair
+    votes_json = game[8]  # votes
+    
+    # Парсим данные
+    movies_list = json.loads(movies_json)
+    current_pair_movies = json.loads(current_pair) if current_pair else []
+    votes = json.loads(votes_json) if votes_json else {}
+    
+    await finish_group_round(query, context, game_id, movies_list, current_pair_movies, votes)
 
 async def finish_group_round(query, context, game_id, movies_list, current_pair_movies, votes):
     """Завершение раунда в групповом режиме"""
