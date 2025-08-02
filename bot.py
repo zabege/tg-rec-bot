@@ -843,13 +843,13 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             user_name = update.effective_user.username or update.effective_user.first_name
-            message = f"🎬 **Опросник для @{user_name}**\n\n"
-            message += "**Вопрос 1: Жанры**\n"
+            message = f"🎬 Опросник для {user_name}\n\n"
+            message += "Вопрос 1: Жанры\n"
             message += "Какие жанры тебе нравятся? Выбери до 3.\n"
             message += f"Выбрано: {len(temp_data['selected_genres'])}/3\n"
             message += "Нажми на жанр, чтобы выбрать/отменить."
             
-            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.message.reply_text(message, reply_markup=reply_markup)
             return
     
     # Инициализируем временные данные пользователя в базе данных
@@ -870,13 +870,13 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user_name = update.effective_user.username or update.effective_user.first_name
-    message = f"🎬 **Опросник для @{user_name}**\n\n"
-    message += "**Вопрос 1: Жанры**\n"
+    message = f"🎬 Опросник для {user_name}\n\n"
+    message += "Вопрос 1: Жанры\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
     # Отправляем опросник в группу для конкретного пользователя
-    await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await update.message.reply_text(message, reply_markup=reply_markup)
 
 async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало группового опросника для всех участников"""
@@ -948,8 +948,8 @@ async def start_individual_group_survey(query, context):
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             user_name = query.from_user.username or query.from_user.first_name
-            message = f"🎬 **Опросник для @{user_name}**\n\n"
-            message += "**Вопрос 1: Жанры**\n"
+            message = f"🎬 Опросник для {user_name}\n\n"
+            message += "Вопрос 1: Жанры\n"
             message += "Какие жанры тебе нравятся? Выбери до 3.\n"
             message += f"Выбрано: {len(temp_data['selected_genres'])}/3\n"
             message += "Нажми на жанр, чтобы выбрать/отменить."
@@ -957,8 +957,7 @@ async def start_individual_group_survey(query, context):
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                reply_markup=reply_markup
             )
             return
     
@@ -980,8 +979,8 @@ async def start_individual_group_survey(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user_name = query.from_user.username or query.from_user.first_name
-    message = f"🎬 **Опросник для @{user_name}**\n\n"
-    message += "**Вопрос 1: Жанры**\n"
+    message = f"🎬 Опросник для {user_name}\n\n"
+    message += "Вопрос 1: Жанры\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
@@ -990,8 +989,7 @@ async def start_individual_group_survey(query, context):
     await context.bot.send_message(
         chat_id=chat_id,
         text=message,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
     logger.info(f"Опросник отправлен для пользователя {user_id}")
 
@@ -1217,8 +1215,8 @@ async def handle_group_survey_genre_selection(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user_name = query.from_user.username or query.from_user.first_name
-    message = f"🎬 **Опросник для @{user_name}**\n\n"
-    message += "**Вопрос 1: Жанры**\n"
+    message = f"🎬 Опросник для {user_name}\n\n"
+    message += "Вопрос 1: Жанры\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += f"Выбрано: {len(selected_genres)}/3\n"
     
@@ -1226,7 +1224,7 @@ async def handle_group_survey_genre_selection(query, context):
         selected_names = [GENRES[g]['name'] for g in selected_genres]
         message += f"Выбранные жанры: {', '.join(selected_names)}"
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def handle_group_survey_genres_done(query, context):
     """Завершение выбора жанров в групповом опроснике"""
@@ -1254,11 +1252,11 @@ async def handle_group_survey_genres_done(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user_name = query.from_user.username or query.from_user.first_name
-    message = f"🎬 **Опросник для @{user_name}**\n\n"
-    message += "**Вопрос 2: Тип контента**\n"
+    message = f"🎬 Опросник для {user_name}\n\n"
+    message += "Вопрос 2: Тип контента\n"
     message += "Хочешь фильмы или сериалы?"
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def handle_group_survey_type_selection(query, context):
     """Обработка выбора типа контента в групповом опроснике"""
@@ -1281,11 +1279,11 @@ async def handle_group_survey_type_selection(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user_name = query.from_user.username or query.from_user.first_name
-    message = f"🎬 **Опросник для @{user_name}**\n\n"
-    message += "**Вопрос 3: Годы выпуска**\n"
+    message = f"🎬 Опросник для {user_name}\n\n"
+    message += "Вопрос 3: Годы выпуска\n"
     message += "Фильмы какого времени?"
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
 async def handle_group_survey_year_selection(query, context):
     """Обработка выбора года в групповом опроснике"""
@@ -1310,7 +1308,7 @@ async def handle_group_survey_year_selection(query, context):
     year_range_name = YEAR_RANGES[year_range]['name']
     
     user_name = query.from_user.username or query.from_user.first_name
-    message = f"✅ Опросник для @{user_name} завершен!\n\n"
+    message = f"✅ Опросник для {user_name} завершен!\n\n"
     message += f"🎬 Твои жанры: {', '.join(selected_genres_names)}\n"
     message += f"📺 Твой тип: {content_type_name}\n"
     message += f"📅 Твои годы: {year_range_name}\n\n"
