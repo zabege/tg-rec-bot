@@ -1563,6 +1563,17 @@ async def reset_survey_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text("🔄 Опросник сброшен!\nТеперь можешь начать заново командой /battle")
 
+async def clear_all_surveys_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Очистка всех опросников в чате"""
+    chat_id = update.effective_chat.id
+    
+    logger.info(f"Очистка всех опросников в чате {chat_id}")
+    
+    # Очищаем все опросники для этого чата
+    clear_old_surveys(chat_id)
+    
+    await update.message.reply_text("🧹 Все опросники в чате очищены!\nТеперь можно начать новый опросник командой /battle")
+
 async def process_vote(query, context, game_id, vote):
     """Обработка голосования"""
     import json
@@ -1932,6 +1943,7 @@ def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("battle", battle_command))
         application.add_handler(CommandHandler("reset_survey", reset_survey_command))
+        application.add_handler(CommandHandler("clear_surveys", clear_all_surveys_command))
         application.add_handler(CallbackQueryHandler(button_handler))
         logger.info("Обработчики добавлены успешно")
     except Exception as e:
