@@ -898,6 +898,8 @@ async def start_individual_group_survey(query, context):
     user_id = query.from_user.id
     chat_id = query.message.chat.id
     
+    logger.info(f"Начало индивидуального опросника для пользователя {user_id} в чате {chat_id}")
+    
     # Проверяем, не проходил ли пользователь уже опросник
     existing_survey = get_survey_data(user_id, chat_id)
     temp_data = get_user_survey_temp_data(user_id, chat_id)
@@ -974,12 +976,14 @@ async def start_individual_group_survey(query, context):
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
     # Отправляем опросник в группу для конкретного пользователя
+    logger.info(f"Отправка опросника для пользователя {user_id}")
     await context.bot.send_message(
         chat_id=chat_id,
         text=message,
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+    logger.info(f"Опросник отправлен для пользователя {user_id}")
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
@@ -1139,6 +1143,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data == "start_my_survey":
         # Начало индивидуального опросника для участника группы
+        logger.info(f"Нажата кнопка start_my_survey пользователем {query.from_user.id}")
         await start_individual_group_survey(query, context)
     
     elif query.data.startswith("vote_"):
