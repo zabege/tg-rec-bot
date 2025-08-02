@@ -273,13 +273,17 @@ def get_active_group_game(chat_id: int):
 
 def get_group_survey_data(chat_id: int):
     """Получает объединенные данные всех завершенных опросников для данного группового чата."""
+    logger.info(f"Получение данных опросника для чата {chat_id}")
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('SELECT user_id, selected_genres, content_type, year_range FROM surveys WHERE chat_id = ?', (chat_id,))
     results = cursor.fetchall()
     conn.close()
     
+    logger.info(f"Найдено {len(results)} завершенных опросников для чата {chat_id}")
+    
     if not results:
+        logger.warning(f"Нет завершенных опросников для чата {chat_id}")
         return None
     
     # Объединяем данные всех участников
@@ -306,11 +310,14 @@ def get_group_survey_data(chat_id: int):
     most_popular_content_type = max(content_types.items(), key=lambda x: x[1])[0]
     most_popular_year_range = max(year_ranges.items(), key=lambda x: x[1])[0]
     
-    return {
+    result = {
         'selected_genres': list(all_genres),
         'content_type': most_popular_content_type,
         'year_range': most_popular_year_range
     }
+    
+    logger.info(f"Агрегированные данные опросника для чата {chat_id}: {result}")
+    return result
 
 def save_user_survey_temp_data(user_id: int, chat_id: int, selected_genres: list = None, content_type: str = None, year_range: str = None):
     """Сохранение временных данных опросника пользователя"""
