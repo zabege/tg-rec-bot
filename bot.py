@@ -1372,24 +1372,31 @@ def get_survey_participants_count(chat_id: int):
 
 async def start_group_game_from_survey(query, context, chat_id):
     """Запуск групповой игры на основе опросника"""
+    logger.info(f"Начало start_group_game_from_survey для чата {chat_id}")
+    
     # Получаем объединенные данные опросника
     survey_data = get_group_survey_data(chat_id)
+    logger.info(f"Полученные данные опросника: {survey_data}")
     
     if not survey_data:
+        logger.error(f"Данные опросника не найдены для чата {chat_id}")
         await query.edit_message_text("❌ Ошибка: данные опросника не найдены")
         return
     
     # Получаем фильмы на основе опросника
+    logger.info(f"Получаем фильмы для жанров: {survey_data['selected_genres']}, тип: {survey_data['content_type']}, годы: {survey_data['year_range']}")
     movies = await get_movies_by_survey(
         survey_data['selected_genres'],
         survey_data['content_type'],
         survey_data['year_range'],
         26
     )
+    logger.info(f"Получено фильмов: {len(movies)}")
     
     # Создаем игру
     user_id = query.from_user.id
     game_id = create_game(user_id, chat_id, 'group', movies)
+    logger.info(f"Создана игра с ID: {game_id}")
     
     # Показываем результат опросника в группе
     selected_genres_names = [GENRES[g]['name'] for g in survey_data['selected_genres']]
@@ -1405,19 +1412,24 @@ async def start_group_game_from_survey(query, context, chat_id):
     # Отправляем сообщение в группу
     try:
         await context.bot.send_message(chat_id, message)
+        logger.info(f"Отправлено сообщение о завершении опросника в чат {chat_id}")
     except Exception as e:
         logger.warning(f"Не удалось отправить сообщение в группу {chat_id}: {e}")
     
     # Начинаем первый раунд - отправляем в группу
+    logger.info(f"Начинаем первый раунд для игры {game_id}")
     await start_battle_round_group(context, chat_id, game_id, movies)
 
 async def start_battle_round_group(context, chat_id, game_id, movies_list):
     """Начало раунда битвы в группе"""
     import json
     
+    logger.info(f"Начало start_battle_round_group для игры {game_id}, чат {chat_id}, фильмов: {len(movies_list)}")
+    
     # Получаем текущую игру
     game = get_current_game_by_id(game_id)
     if not game:
+        logger.error(f"Игра {game_id} не найдена в базе данных")
         return
     
     current_round = game[5]  # current_round
@@ -1457,6 +1469,7 @@ async def start_battle_round_group(context, chat_id, game_id, movies_list):
     # Отправляем сообщение в группу
     try:
         await context.bot.send_message(chat_id, message, reply_markup=reply_markup)
+        logger.info(f"Отправлено сообщение с битвой в чат {chat_id}, раунд {current_round}/{total_rounds}")
     except Exception as e:
         logger.warning(f"Не удалось отправить сообщение в группу {chat_id}: {e}")
 
