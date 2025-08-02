@@ -741,6 +741,9 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(message, parse_mode='Markdown')
         return
     
+    # Инициализируем данные пользователя
+    context.user_data['selected_genres'] = []
+    context.user_data['content_type'] = 'movie'
     save_user_state(user_id, GAME_STATES['SURVEY_GENRES'])
     
     # Создаем кнопки для выбора жанров
@@ -756,20 +759,13 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Групповой опросник - Вопрос 1: Жанры**\n\n"
+    message = f"🎬 **Опросник для @{update.effective_user.username or update.effective_user.first_name}**\n\n"
+    message += "**Вопрос 1: Жанры**\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += "Нажми на жанр, чтобы выбрать/отменить."
     
-    try:
-        # Пытаемся отправить личное сообщение пользователю
-        await context.bot.send_message(user_id, message, reply_markup=reply_markup, parse_mode='Markdown')
-        
-        # Отправляем подтверждение в группу
-        await update.message.reply_text(f"✅ @{update.effective_user.username or update.effective_user.first_name}, тебе отправлен опросник в личные сообщения!")
-    except Exception as e:
-        # Если не удалось отправить в личные сообщения, отправляем в группу
-        logger.warning(f"Не удалось отправить личное сообщение пользователю {user_id}: {e}")
-        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    # Отправляем опросник в группу для конкретного пользователя
+    await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
@@ -949,7 +945,7 @@ async def handle_group_survey_genre_selection(query, context):
     user_id = query.from_user.id
     genre_key = query.data.replace("group_survey_genre_", "")
     
-    # Получаем текущие выбранные жанры из контекста
+    # Инициализируем список жанров, если его нет
     if 'selected_genres' not in context.user_data:
         context.user_data['selected_genres'] = []
     
@@ -976,7 +972,9 @@ async def handle_group_survey_genre_selection(query, context):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Групповой опросник - Вопрос 1: Жанры**\n\n"
+    user_name = query.from_user.username or query.from_user.first_name
+    message = f"🎬 **Опросник для @{user_name}**\n\n"
+    message += "**Вопрос 1: Жанры**\n"
     message += "Какие жанры тебе нравятся? Выбери до 3.\n"
     message += f"Выбрано: {len(selected_genres)}/3\n"
     
@@ -1006,7 +1004,9 @@ async def handle_group_survey_genres_done(query, context):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Групповой опросник - Вопрос 2: Тип контента**\n\n"
+    user_name = query.from_user.username or query.from_user.first_name
+    message = f"🎬 **Опросник для @{user_name}**\n\n"
+    message += "**Вопрос 2: Тип контента**\n"
     message += "Хочешь фильмы или сериалы?"
     
     await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -1029,7 +1029,9 @@ async def handle_group_survey_type_selection(query, context):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    message = "🎬 **Групповой опросник - Вопрос 3: Годы выпуска**\n\n"
+    user_name = query.from_user.username or query.from_user.first_name
+    message = f"🎬 **Опросник для @{user_name}**\n\n"
+    message += "**Вопрос 3: Годы выпуска**\n"
     message += "Фильмы какого времени?"
     
     await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -1039,23 +1041,8 @@ async def handle_group_survey_year_selection(query, context):
     user_id = query.from_user.id
     year_range = query.data.replace("group_survey_year_", "")
     
-    # Получаем chat_id из базы данных или контекста
-    # Для этого нужно найти активную группу пользователя
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT chat_id FROM surveys 
-        WHERE user_id = ? 
-        ORDER BY created_at DESC LIMIT 1
-    ''', (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    
-    if not result:
-        await query.answer("Ошибка: не найдена группа для опросника")
-        return
-    
-    chat_id = result[0]
+    # Получаем chat_id из сообщения
+    chat_id = query.message.chat.id
     
     # Сохраняем данные опросника пользователя
     selected_genres = context.user_data.get('selected_genres', [])
@@ -1068,14 +1055,15 @@ async def handle_group_survey_year_selection(query, context):
     content_type_name = CONTENT_TYPES[content_type]
     year_range_name = YEAR_RANGES[year_range]['name']
     
-    message = "✅ **Твой опросник завершен!**\n\n"
+    user_name = query.from_user.username or query.from_user.first_name
+    message = f"✅ **Опросник для @{user_name} завершен!**\n\n"
     message += f"🎬 Твои жанры: {', '.join(selected_genres_names)}\n"
     message += f"📺 Твой тип: {content_type_name}\n"
     message += f"📅 Твои годы: {year_range_name}\n\n"
     
     # Проверяем, сколько участников прошли опросник
     survey_count = get_survey_participants_count(chat_id)
-    chat_members_count = await query.bot.get_chat_member_count(chat_id)
+    chat_members_count = await context.bot.get_chat_member_count(chat_id)
     
     message += f"📊 Прошли опросник: {survey_count}/{chat_members_count - 1} участников\n"
     
@@ -1086,9 +1074,8 @@ async def handle_group_survey_year_selection(query, context):
         
         # Отправляем уведомление в группу
         try:
-            user_name = query.from_user.first_name or query.from_user.username or "Участник"
             group_message = f"🎉 **{user_name}** завершил опросник! Все участники готовы!"
-            await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+            await context.bot.send_message(chat_id, group_message, parse_mode='Markdown')
         except Exception as e:
             logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
         
@@ -1103,9 +1090,8 @@ async def handle_group_survey_year_selection(query, context):
         
         # Отправляем уведомление в группу
         try:
-            user_name = query.from_user.first_name or query.from_user.username or "Участник"
             group_message = f"✅ **{user_name}** завершил опросник! ({survey_count}/{chat_members_count - 1} участников)"
-            await query.bot.send_message(chat_id, group_message, parse_mode='Markdown')
+            await context.bot.send_message(chat_id, group_message, parse_mode='Markdown')
         except Exception as e:
             logger.warning(f"Не удалось отправить уведомление в группу {chat_id}: {e}")
 
