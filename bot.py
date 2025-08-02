@@ -138,6 +138,20 @@ def update_game_round(game_id: int, current_round: int, current_pair: str, votes
     conn.commit()
     conn.close()
 
+def increment_game_round(game_id: int):
+    """Увеличение номера раунда"""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        UPDATE games 
+        SET current_round = current_round + 1
+        WHERE game_id = ?
+    ''', (game_id,))
+    
+    conn.commit()
+    conn.close()
+
 def get_popular_movies(count: int = 26):
     """Получение популярных фильмов для битвы"""
     try:
@@ -631,7 +645,8 @@ async def process_vote(query, context, game_id, vote):
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
         else:
-            # Продолжаем игру
+            # Увеличиваем номер раунда и продолжаем игру
+            increment_game_round(game_id)
             await start_battle_round(query, context, game_id, movies_list)
     
     else:
@@ -675,7 +690,8 @@ async def process_vote(query, context, game_id, vote):
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(result_message, reply_markup=reply_markup, parse_mode='Markdown')
         else:
-            # Продолжаем игру
+            # Увеличиваем номер раунда и продолжаем игру
+            increment_game_round(game_id)
             keyboard = [[InlineKeyboardButton("➡️ Следующий раунд", callback_data=f"next_round_{game_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
