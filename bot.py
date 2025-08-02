@@ -745,8 +745,8 @@ async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Если игра уже идет, присоединяемся к ней
         await join_existing_game(update, context, active_game)
     else:
-        # Начинаем новый опросник для группы
-        await start_group_survey(update, context)
+        # Начинаем новый опросник для всех участников группы
+        await start_group_survey_for_all(update, context)
 
 async def start_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало опросника"""
@@ -852,6 +852,38 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Отправляем опросник в группу для конкретного пользователя
     await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало группового опросника для всех участников"""
+    chat_id = update.effective_chat.id
+    
+    try:
+        # Отправляем сообщение о начале опросника
+        await update.message.reply_text(
+            "🎬 **Начинаем групповой опросник!**\n\n"
+            "Каждый участник должен пройти опросник, чтобы начать игру.\n"
+            "Нажмите на кнопку ниже, чтобы начать свой опросник.",
+            parse_mode='Markdown'
+        )
+        
+        # Создаем кнопку для начала опросника
+        keyboard = [[InlineKeyboardButton("🎬 Начать опросник", callback_data="start_my_survey")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Отправляем общий опросник в группу
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🎯 **Групповой опросник**\n\n"
+                 "Каждый участник должен пройти опросник индивидуально.\n"
+                 "Нажмите кнопку ниже, чтобы начать свой опросник.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при отправке группового опросника: {e}")
+        # Если не удалось отправить общий опросник, отправляем индивидуальный
+        await start_group_survey(update, context)
 
 async def join_existing_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединение к существующей игре"""
@@ -1008,6 +1040,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("group_survey_year_"):
         # Обработка выбора года в групповом опроснике
         await handle_group_survey_year_selection(query, context)
+    
+    elif query.data == "start_my_survey":
+        # Начало индивидуального опросника для участника группы
+        await start_group_survey(query, context)
     
     elif query.data.startswith("vote_"):
         # Обработка голосования
