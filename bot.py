@@ -397,6 +397,15 @@ def clear_user_survey_temp_data(user_id: int, chat_id: int):
     conn.commit()
     conn.close()
 
+def clear_old_surveys(chat_id: int):
+    """Очистка старых опросников для чата"""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM surveys WHERE chat_id = ?', (chat_id,))
+    conn.commit()
+    conn.close()
+    logger.info(f"Очищены старые опросники для чата {chat_id}")
+
 def get_movies_by_survey(selected_genres: list, content_type: str, year_range: str, count: int = 26):
     """Получение фильмов на основе опросника"""
     try:
@@ -887,6 +896,10 @@ async def start_group_survey(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def start_group_survey_for_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало группового опросника для всех участников"""
     chat_id = update.effective_chat.id
+    
+    # Очищаем старые опросники для этого чата
+    clear_old_surveys(chat_id)
+    logger.info(f"Начинаем новый групповой опросник для чата {chat_id}")
     
     try:
         # Создаем кнопку для начала опросника
